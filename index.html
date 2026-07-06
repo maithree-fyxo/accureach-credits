@@ -153,9 +153,26 @@ input[type=file]::file-selector-button{padding:4px 9px;border-radius:var(--r);bo
     <div class="fa" style="margin-top:8px"><button class="bp" id="btn-do-import">Restore from backup</button><button class="bo" id="btn-close-modal2">Close</button></div>
   </div>
 </div>
+<div class="toast-wrap" id="toast-wrap"></div>
+<div class="modal-bg hid" id="confirm-modal">
+  <div class="modal modal-sm">
+    <h3 id="confirm-title">Delete item?</h3>
+    <p id="confirm-msg">This action cannot be undone.</p>
+    <div class="fa" style="margin-top:0"><button class="bp" id="confirm-ok" style="background:var(--red-t)">Delete</button><button class="bo" id="confirm-cancel">Cancel</button></div>
+  </div>
+</div>
+<div class="modal-bg hid" id="preview-modal">
+  <div class="modal" style="max-width:660px">
+    <div class="fb mb8"><h3 id="preview-title">Email preview</h3><button class="bi" id="btn-close-preview" style="border:none;font-size:16px;padding:2px 6px">&#x2715;</button></div>
+    <p class="f12 m">This is how the email will appear to recipients.</p>
+    <div class="preview-frame" id="preview-frame"></div>
+    <div class="fa" style="margin-top:12px"><button class="bo" id="btn-close-preview2">Close</button></div>
+  </div>
+</div>
 <main>
 <section id="tab-dashboard" class="pnl on">
   <div class="sh"><h2>Overview</h2></div>
+  <div id="expiring-soon-section"></div>
   <div id="pool-section"></div>
   <div class="chart-wrap">
     <div class="fb" style="margin-bottom:12px"><h3 style="margin:0">Daily credit usage</h3></div>
@@ -193,6 +210,18 @@ input[type=file]::file-selector-button{padding:4px 9px;border-radius:var(--r);bo
       <input type="hidden" id="cf-id"/>
       <div class="fa"><button class="bp" id="btn-save-client">Save client</button><button class="bo" id="btn-cancel-client">Cancel</button></div>
     </div>
+  </div>
+  <div class="clients-toolbar">
+    <div class="search-wrap">
+      <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" id="client-search" placeholder="Search clients…" style="font-size:12px"/>
+    </div>
+    <select id="client-sort" style="width:auto;min-width:160px;font-size:12px">
+      <option value="name">Sort: Name A–Z</option>
+      <option value="name-desc">Sort: Name Z–A</option>
+      <option value="used">Sort: Most credits used</option>
+      <option value="allocated">Sort: Most allocated</option>
+    </select>
   </div>
   <div id="clients-list"></div>
 </section>
@@ -253,7 +282,7 @@ input[type=file]::file-selector-button{padding:4px 9px;border-radius:var(--r);bo
   </div>
   <div class="card card-form mb14">
     <h3>Notification triggers</h3>
-    <p class="f12 m mb10">Configure which events trigger email notifications.</p>
+    <p class="f12 m mb10">Toggle which events send emails and to whom. Click <strong>Preview</strong> to see the exact email that will be sent.</p>
     <div class="stk" id="trigger-list"></div>
     <div class="fa" style="margin-top:10px"><button class="bp" id="btn-save-triggers">Save trigger settings</button></div>
   </div>
@@ -307,6 +336,7 @@ const ICedit='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke
 const ICtrash='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>';
 const ICcheck='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="20 6 9 17 4 12"/></svg>';
 const ICupload='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>';
+const ICrefresh='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>';
 
 const DEFAULT_TRIGGERS={
   new_allocation:{label:'New credit pool allocated to client',client:true,admin:true,enabled:true},
@@ -333,7 +363,22 @@ function mergeState(inc){
 }
 
 let S={creditTypes:[],clients:[],usageLogs:[],auditLogs:[],notifLogs:[],settings:{sgApiKey:'',sgFromEmail:'',sgFromName:'AccuReach Credits',adminEmails:[],triggers:{...DEFAULT_TRIGGERS},dailyThreshold:1000,sentNotifKeys:{}}};
-let editingPool={},lastKnownJSON='',pendingRemoteData=null,adminEmailRows=[];
+let editingPool={},lastKnownJSON='',pendingRemoteData=null,adminEmailRows=[],expandedClients=new Set();
+
+// ── Toast notifications ──
+function toast(msg,type='ok',duration=3000){const wrap=document.getElementById('toast-wrap');const t=document.createElement('div');t.className='toast '+type;const icon=type==='ok'?'✓':type==='er'?'✕':'ℹ';t.innerHTML=`<span style="font-weight:600;flex-shrink:0">${icon}</span><span>${msg}</span>`;wrap.appendChild(t);setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(8px)';t.style.transition='all .2s';setTimeout(()=>t.remove(),200);},duration);}
+
+// ── Confirm delete modal ──
+let confirmResolve=null;
+function confirmDelete(title,msg){return new Promise(resolve=>{confirmResolve=resolve;document.getElementById('confirm-title').textContent=title;document.getElementById('confirm-msg').textContent=msg||'This action cannot be undone.';document.getElementById('confirm-modal').classList.remove('hid');});}
+document.getElementById('confirm-ok').addEventListener('click',()=>{document.getElementById('confirm-modal').classList.add('hid');if(confirmResolve)confirmResolve(true);confirmResolve=null;});
+document.getElementById('confirm-cancel').addEventListener('click',()=>{document.getElementById('confirm-modal').classList.add('hid');if(confirmResolve)confirmResolve(false);confirmResolve=null;});
+
+// ── Email preview modal ──
+document.getElementById('btn-close-preview').addEventListener('click',()=>document.getElementById('preview-modal').classList.add('hid'));
+document.getElementById('btn-close-preview2').addEventListener('click',()=>document.getElementById('preview-modal').classList.add('hid'));
+document.getElementById('preview-modal').addEventListener('click',e=>{if(e.target===document.getElementById('preview-modal'))document.getElementById('preview-modal').classList.add('hid');});
+function showPreview(title,html){document.getElementById('preview-title').textContent=title;document.getElementById('preview-frame').innerHTML='<iframe srcdoc="'+html.replace(/"/g,'&quot;')+'" style="width:100%;height:380px;border:none;border-radius:4px"></iframe>';document.getElementById('preview-modal').classList.remove('hid');}
 
 async function loadShared(){
   try{
@@ -415,7 +460,32 @@ function expiryLabel(expiry){
   const label=new Date(expiry).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
   return ' <span class="exp-badge exp-'+status+'">exp '+label+'</span>';
 }
+function daysUntil(expiry){if(!expiry)return null;return Math.round((new Date(expiry)-new Date())/(1000*60*60*24));}
 
+// ── Expiring soon widget ──
+function renderExpiringSoon(){
+  const el=document.getElementById('expiring-soon-section');
+  if(!el)return;
+  const alerts=[];
+  S.clients.forEach(client=>{
+    (client.consignments||[]).forEach(cs=>{
+      const ct=S.creditTypes.find(t=>t.id===cs.creditTypeId);
+      (cs.batches||[]).forEach(batch=>{
+        if(!batch.expiry)return;
+        const days=daysUntil(batch.expiry);
+        if(days!==null&&days<=90){alerts.push({clientName:client.name,ctName:ct?.name||'—',allocated:batch.allocated,days,isOver:days<0});}
+      });
+    });
+  });
+  if(!alerts.length){el.innerHTML='';return;}
+  alerts.sort((a,b)=>a.days-b.days);
+  const rows=alerts.slice(0,5).map(a=>{
+    const cls=a.days<=7||a.isOver?'red':'';
+    const label=a.isOver?`Expired ${Math.abs(a.days)} day${Math.abs(a.days)===1?'':'s'} ago`:a.days===0?'Expires today':`${a.days} day${a.days===1?'':'s'} left`;
+    return `<div class="expiry-alert ${cls}" style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div><p class="f12 f5" style="margin-bottom:2px">${esc(a.clientName)}</p><p class="f11 m">${esc(a.ctName)} · ${fmt(a.allocated)} credits</p></div><span class="badge ${a.isOver||a.days<=7?'br':'ba'}" style="white-space:nowrap">${label}</span></div>`;
+  }).join('');
+  el.innerHTML=`<div style="margin-bottom:22px"><div class="fb" style="margin-bottom:10px"><h3 style="margin:0">&#9888; Expiring soon</h3>${alerts.length>5?`<span class="f11 m">${alerts.length} total</span>`:''}</div><div class="stk">${rows}</div></div>`;
+}
 // SendGrid
 async function sendEmail(toEmails,subject,htmlBody){
   const cfg=S.settings;
@@ -588,37 +658,30 @@ function renderNotificationsTab(){
   document.getElementById('sg-from-email').value=cfg.sgFromEmail||'';
   document.getElementById('sg-from-name').value=cfg.sgFromName||'AccuReach Credits';
   document.getElementById('daily-threshold').value=cfg.dailyThreshold||1000;
-  adminEmailRows=(cfg.adminEmails||[]).map(e=>({...e}));
-  renderAdminEmailRows();
+  adminEmailRows=(cfg.adminEmails||[]).map(e=>({...e}));renderAdminEmailRows();
   const triggers=cfg.triggers||DEFAULT_TRIGGERS;
+  const sampleClient=S.clients.find(c=>(c.consignments||[]).length>0)||S.clients[0]||{name:'Sample Client',contacts:[]};
+  const sampleCs=sampleClient?.consignments?.[0]||null;
+  const sampleCt=sampleCs?S.creditTypes.find(t=>t.id===sampleCs.creditTypeId):S.creditTypes[0];
+  const previewFns={
+    new_allocation:()=>buildNewAllocationEmail({clientName:sampleClient.name,ctName:sampleCt?.name||'/v5/person/enrich',allocated:10000,expiry:'2027-01-01'}),
+    expiry_3mo:()=>buildExpiryEmail({clientName:sampleClient.name,ctName:sampleCt?.name||'/v5/person/enrich',allocated:10000,used:4500,expStr:'1 October 2026',daysLeft:87}),
+    expiry_1mo:()=>buildExpiryEmail({clientName:sampleClient.name,ctName:sampleCt?.name||'/v5/person/enrich',allocated:10000,used:4500,expStr:'1 August 2026',daysLeft:26}),
+    expiry_1wk:()=>buildExpiryEmail({clientName:sampleClient.name,ctName:sampleCt?.name||'/v5/person/enrich',allocated:10000,used:4500,expStr:'13 July 2026',daysLeft:5}),
+    expiry_now:()=>buildExpiryEmail({clientName:sampleClient.name,ctName:sampleCt?.name||'/v5/person/enrich',allocated:10000,used:4500,expStr:'6 July 2026',daysLeft:0}),
+    usage_90:()=>buildUsageEmail({clientName:sampleClient.name,ctName:sampleCt?.name||'/v5/person/enrich',used:9200,totalAlloc:10000,usagePct:0.92,isExceeded:false}),
+    usage_exceeded:()=>buildUsageEmail({clientName:sampleClient.name,ctName:sampleCt?.name||'/v5/person/enrich',used:10400,totalAlloc:10000,usagePct:1.04,isExceeded:true}),
+    high_daily:()=>buildHighDailyEmail({ctName:sampleCt?.name||'/v5/person/enrich',total:1842,threshold:1000,clientBreakdown:[[sampleClient.name,1200],['Other Client',642]],dateStr:new Date().toISOString().slice(0,10)})
+  };
   document.getElementById('trigger-list').innerHTML=Object.entries(DEFAULT_TRIGGERS).map(([key,def])=>{
     const t=triggers[key]||def;
-    return `<div style="display:grid;grid-template-columns:1fr auto auto auto;gap:12px;align-items:center;padding:8px 0;border-bottom:.5px solid var(--bdr)">
-      <span class="f12">${esc(def.label)}</span>
-      ${def.adminOnly?'<span class="f11 m">—</span>':`<label class="tog-wrap" style="gap:6px"><span class="tog"><input type="checkbox" data-tkey="${key}" data-trole="client" ${t.client?'checked':''}/><span class="tog-track"></span><span class="tog-thumb"></span></span><span class="f11 m">Client</span></label>`}
-      <label class="tog-wrap" style="gap:6px"><span class="tog"><input type="checkbox" data-tkey="${key}" data-trole="admin" ${t.admin?'checked':''}/><span class="tog-track"></span><span class="tog-thumb"></span></span><span class="f11 m">Admin</span></label>
-      <label class="tog-wrap" style="gap:6px"><span class="tog"><input type="checkbox" data-tkey="${key}" data-trole="enabled" ${t.enabled?'checked':''}/><span class="tog-track"></span><span class="tog-thumb"></span></span><span class="f11 m">On</span></label>
-    </div>`;
+    return `<div style="display:grid;grid-template-columns:1fr auto auto auto auto;gap:10px;align-items:center;padding:10px 0;border-bottom:.5px solid var(--bdr)"><span class="f12">${esc(def.label)}</span>${def.adminOnly?'<span class="f11 m">—</span>':`<label class="tog-wrap" style="gap:6px"><span class="tog"><input type="checkbox" data-tkey="${key}" data-trole="client" ${t.client?'checked':''}/><span class="tog-track"></span><span class="tog-thumb"></span></span><span class="f11 m">Client</span></label>`}<label class="tog-wrap" style="gap:6px"><span class="tog"><input type="checkbox" data-tkey="${key}" data-trole="admin" ${t.admin?'checked':''}/><span class="tog-track"></span><span class="tog-thumb"></span></span><span class="f11 m">Admin</span></label><label class="tog-wrap" style="gap:6px"><span class="tog"><input type="checkbox" data-tkey="${key}" data-trole="enabled" ${t.enabled?'checked':''}/><span class="tog-track"></span><span class="tog-thumb"></span></span><span class="f11 m">On</span></label><button class="bo sm" data-preview-key="${key}" style="white-space:nowrap">Preview</button></div>`;
   }).join('');
+  document.getElementById('trigger-list').querySelectorAll('[data-preview-key]').forEach(btn=>{btn.addEventListener('click',()=>{const fn=previewFns[btn.dataset.previewKey];if(fn)showPreview(DEFAULT_TRIGGERS[btn.dataset.previewKey].label+' — email preview',fn());});});
   renderNotifLog();
 }
-
-function renderAdminEmailRows(){
-  const el=document.getElementById('admin-email-rows'),msg=document.getElementById('admin-email-empty');
-  if(!adminEmailRows.length){el.innerHTML='';msg.style.display='';return;}
-  msg.style.display='none';
-  el.innerHTML=adminEmailRows.map((r,i)=>'<div class="admin-email-row"><div>'+(i===0?'<label class="fl">Email address</label>':'')+'<input type="email" data-field="aemail" data-id="'+r.id+'" value="'+esc(r.email||'')+'" placeholder="admin@company.com"/></div><button class="bi dl" data-action="del-admin-email" data-id="'+r.id+'" style="margin-top:'+(i===0?'16':'0')+'px">'+ICtrash+'</button></div>').join('');
-}
-
-function renderNotifLog(){
-  const el=document.getElementById('notif-log-wrap');
-  const logs=S.notifLogs||[];
-  if(!logs.length){el.innerHTML=empty('No notifications sent yet.');return;}
-  el.innerHTML='<div class="card"><div style="padding:4px 0">'+logs.slice(0,50).map(l=>{
-    const sc=l.status==='sent'?'sent':l.status==='fail'?'fail':'skipped';
-    return '<div class="notif-row"><div class="notif-dot '+sc+'"></div><div><p class="f12 f5" style="margin-bottom:1px">'+esc(l.subject||l.key)+'</p>'+(l.recipients?.length?'<p class="f11 m">→ '+l.recipients.map(esc).join(', ')+'</p>':'')+(l.error?'<p class="f11" style="color:var(--red-t)">'+esc(l.error)+'</p>':'')+'</div><div style="text-align:right;flex-shrink:0"><span class="badge '+(sc==='sent'?'bg':sc==='fail'?'br':'ba')+'">'+(l.status==='sent'?'Sent':l.status==='fail'?'Failed':'Skipped')+'</span><p class="f11 m" style="margin-top:2px">'+new Date(l.date).toLocaleDateString('en-GB',{day:'2-digit',month:'short'})+'</p></div></div>';
-  }).join('')+'</div></div>';
-}
+function renderAdminEmailRows(){const el=document.getElementById('admin-email-rows'),msg=document.getElementById('admin-email-empty');if(!adminEmailRows.length){el.innerHTML='';msg.style.display='';return;}msg.style.display='none';el.innerHTML=adminEmailRows.map((r,i)=>'<div class="admin-email-row"><div>'+(i===0?'<label class="fl">Email address</label>':'')+'<input type="email" data-field="aemail" data-id="'+r.id+'" value="'+esc(r.email||'')+'" placeholder="admin@company.com"/></div><button class="bi dl" data-action="del-admin-email" data-id="'+r.id+'" style="margin-top:'+(i===0?'16':'0')+'px">'+ICtrash+'</button></div>').join('');}
+function renderNotifLog(){const el=document.getElementById('notif-log-wrap'),logs=S.notifLogs||[];if(!logs.length){el.innerHTML='<div class="emt"><div class="emt-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div><h4>No notifications sent yet</h4><p>Configure SendGrid and run a check.</p></div>';return;}el.innerHTML='<div class="card"><div style="padding:4px 0">'+logs.slice(0,50).map(l=>{const sc=l.status==='sent'?'sent':'fail';return '<div class="notif-row"><div class="notif-dot '+sc+'"></div><div><p class="f12 f5" style="margin-bottom:1px">'+esc(l.subject||l.key)+'</p>'+(l.recipients?.length?'<p class="f11 m">→ '+l.recipients.map(esc).join(', ')+'</p>':'')+( l.error?'<p class="f11" style="color:var(--red-t)">'+esc(l.error)+'</p>':'')+'</div><div style="text-align:right;flex-shrink:0"><span class="badge '+(sc==='sent'?'bp-badge':'br')+'">'+(sc==='sent'?'Sent':'Failed')+'</span><p class="f11 m" style="margin-top:2px">'+new Date(l.date).toLocaleDateString('en-GB',{day:'2-digit',month:'short'})+'</p></div></div>';}).join('')+ '</div></div>';}
 
 document.getElementById('btn-save-sg').addEventListener('click',async()=>{
   S.settings.sgApiKey=document.getElementById('sg-api-key').value.trim();
@@ -639,7 +702,7 @@ document.getElementById('admin-email-rows').addEventListener('click',function(e)
 document.getElementById('admin-email-rows').addEventListener('input',function(e){const f=e.target.closest('[data-field="aemail"]');if(f){const r=adminEmailRows.find(x=>x.id===f.dataset.id);if(r)r.email=f.value;}});
 document.getElementById('btn-save-admin-emails').addEventListener('click',async()=>{
   S.settings.adminEmails=adminEmailRows.filter(r=>r.email).map(r=>({id:r.id,email:r.email}));
-  await saveShared();document.getElementById('sg-msg').innerHTML='<div class="alrt ok">'+ICcheck+' Admin emails saved.</div>';setTimeout(()=>{document.getElementById('sg-msg').innerHTML='';},3000);
+  await saveShared();toast('Admin emails saved');document.getElementById('sg-msg').innerHTML='<div class="alrt ok">'+ICcheck+' Admin emails saved.</div>';setTimeout(()=>{document.getElementById('sg-msg').innerHTML='';},3000);
 });
 document.getElementById('btn-save-triggers').addEventListener('click',async()=>{
   document.getElementById('trigger-list').querySelectorAll('input[data-tkey]').forEach(inp=>{
@@ -649,7 +712,7 @@ document.getElementById('btn-save-triggers').addEventListener('click',async()=>{
   });
   await saveShared();
 });
-document.getElementById('btn-save-threshold').addEventListener('click',async()=>{S.settings.dailyThreshold=Number(document.getElementById('daily-threshold').value)||1000;await saveShared();});
+document.getElementById('btn-save-threshold').addEventListener('click',async()=>{S.settings.dailyThreshold=Number(document.getElementById('daily-threshold').value)||1000;await saveShared();toast('Threshold saved');});
 
 document.querySelectorAll('.tb').forEach(b=>{
   b.addEventListener('click',()=>{
@@ -722,7 +785,7 @@ function renderChart(){
 ['cf-from','cf-to','cf-client','cf-cttype'].forEach(id=>{document.getElementById(id).addEventListener('change',renderChart);});
 
 function renderDashboard(){
-  populateChartFilters();initChartDates();renderChart();
+  populateChartFilters();initChartDates();renderChart();renderExpiringSoon();
   const poolSec=document.getElementById('pool-section');
   if(!S.creditTypes.length){poolSec.innerHTML='<p class="f12 m" style="margin-bottom:20px">No credit types defined yet.</p>';}
   else{
@@ -766,15 +829,20 @@ document.getElementById('pool-section').addEventListener('click',function(e){
     const before=(S.creditTypes.find(t=>t.id===id)||{}).poolTotal||0,after=Number(inp?.value)||0,ct=S.creditTypes.find(t=>t.id===id);
     S.creditTypes=S.creditTypes.map(t=>t.id===id?{...t,poolTotal:after}:t);
     S.auditLogs=[{id:uid(),type:'pool',date:now(),description:'Pool updated: '+(ct?.name||id),creditTypeName:ct?.name||'',before,after},...S.auditLogs].slice(0,500);
-    delete editingPool[id];saveShared();renderDashboard();renderLogs();
+    delete editingPool[id];saveShared();toast('Pool updated');renderDashboard();renderLogs();
     if(S.settings.triggers?.new_allocation?.enabled)setTimeout(()=>runNotificationCheck(false),500);
   }
 });
 
-document.getElementById('ct-list').addEventListener('click',function(e){
+document.getElementById('ct-list').addEventListener('click',async function(e){
   const eb=e.target.closest('[data-action="edit-ct"]'),db=e.target.closest('[data-action="del-ct"]');
   if(eb){const ct=S.creditTypes.find(t=>t.id===eb.dataset.id);if(ct)openCTForm(ct);}
-  if(db){S.creditTypes=S.creditTypes.filter(t=>t.id!==db.dataset.id);saveShared();renderAll();}
+  if(db){
+    const ct=S.creditTypes.find(t=>t.id===db.dataset.id);
+    const ok=await confirmDelete('Delete credit type?',`"${ct?.name||'This credit type'}" will be permanently removed.`);
+    if(!ok)return;
+    S.creditTypes=S.creditTypes.filter(t=>t.id!==db.dataset.id);saveShared();toast('Credit type deleted');renderAll();
+  }
 });
 document.getElementById('btn-add-ct').addEventListener('click',()=>openCTForm(null));
 document.getElementById('btn-cancel-ct').addEventListener('click',()=>document.getElementById('ct-form-wrap').classList.add('hid'));
@@ -784,7 +852,7 @@ document.getElementById('btn-save-ct').addEventListener('click',async()=>{
   const countReliant=document.getElementById('ctf-reliant').checked,id=document.getElementById('ctf-id').value;
   if(id){S.creditTypes=S.creditTypes.map(ct=>ct.id===id?{...ct,name,statusCodes:codes,countReliant}:ct);}
   else{S.creditTypes.push({id:uid(),name,statusCodes:codes,poolTotal:0,countReliant});}
-  await saveShared();document.getElementById('ct-form-wrap').classList.add('hid');renderAll();
+  await saveShared();document.getElementById('ct-form-wrap').classList.add('hid');toast('Credit type saved');renderAll();
 });
 function openCTForm(ct){
   document.getElementById('ctf-name').value=ct?.name||'';document.getElementById('ctf-codes').value=(ct?.statusCodes||[]).join(', ');
@@ -794,9 +862,9 @@ function openCTForm(ct){
 }
 function renderCreditTypes(){
   const el=document.getElementById('ct-list');
-  if(!S.creditTypes.length){el.innerHTML=empty('No credit types yet.');return;}
+  if(!S.creditTypes.length){el.innerHTML=`<div class="emt"><div class="emt-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg></div><h4>No credit types yet</h4><p>Add your first credit type to start tracking API usage.</p><button class="bp" onclick="openCTForm(null)" style="margin:0 auto">Add credit type</button></div>`;return;}
   el.innerHTML='<div class="stk">'+S.creditTypes.map(ct=>{
-    const codes=(ct.statusCodes||[]).map(c=>'<span class="badge bg mn">'+esc(c)+'</span>').join('');
+    const codes=(ct.statusCodes||[]).map(c=>'<span class="badge bp-badge mn">'+esc(c)+'</span>').join('');
     return '<div class="card fb"><div><div class="fc g6" style="margin-bottom:4px"><p class="f5 f13">'+esc(ct.name)+'</p>'+(ct.countReliant?'<span class="badge bv">Count Reliant</span>':'')+'</div><div class="fw g6" style="margin-bottom:5px">'+(codes||'<span class="f11 m">No status codes</span>')+'</div><span class="f11 m">Pool: <span class="mn">'+fmt(ct.poolTotal||0)+'</span> credits</span></div><div class="fc g6"><button class="bi" data-action="edit-ct" data-id="'+ct.id+'">'+ICedit+'</button><button class="bi dl" data-action="del-ct" data-id="'+ct.id+'">'+ICtrash+'</button></div></div>';
   }).join('')+'</div>';
 }
@@ -829,10 +897,33 @@ function renderBatchRows(){
     return '<div class="batch-row"><div>'+(i===0?'<label class="fl">Credit type</label>':'')+'<select data-field="bct" data-id="'+b.id+'"><option value="">— select —</option>'+opts+'</select></div><div>'+(i===0?'<label class="fl">Credits</label>':'')+'<input type="number" data-field="balloc" data-id="'+b.id+'" value="'+(b.allocated||'')+'" placeholder="1000" style="font-family:\'DM Mono\',monospace"/></div><div>'+(i===0?'<label class="fl">Expiry date</label>':'')+'<input type="date" data-field="bexp" data-id="'+b.id+'" value="'+(b.expiry||'')+'" style="'+expStyle+'"/></div><button class="bi dl" data-action="del-batch" data-id="'+b.id+'" style="margin-top:'+(i===0?'16':'0')+'px">'+ICtrash+'</button></div>';
   }).join('');
 }
-document.getElementById('clients-list').addEventListener('click',function(e){
-  const eb=e.target.closest('[data-action="edit-client"]'),db=e.target.closest('[data-action="del-client"]');
-  if(eb){const c=S.clients.find(x=>x.id===eb.dataset.id);if(c)openClientForm(c);}
-  if(db){const c=S.clients.find(x=>x.id===db.dataset.id);S.auditLogs=[{id:uid(),type:'allocation',date:now(),clientId:db.dataset.id,clientName:c?.name||'',description:'Client deleted: '+(c?.name||''),before:null,after:null},...S.auditLogs].slice(0,500);S.clients=S.clients.filter(x=>x.id!==db.dataset.id);saveShared();renderAll();}
+document.getElementById('clients-list').addEventListener('click',async function(e){
+  const card=e.target.closest('.cc[data-client-id]');
+  const eb=e.target.closest('[data-action="edit-client"]');
+  const db=e.target.closest('[data-action="del-client"]');
+  const rb=e.target.closest('[data-action="reset-usage"]');
+  if(rb){
+    e.stopPropagation();
+    const cid=rb.dataset.id,ctId=rb.dataset.ctid;
+    const client=S.clients.find(x=>x.id===cid),ct=S.creditTypes.find(t=>t.id===ctId);
+    const ok=await confirmDelete('Reset usage?',`This will set ${client?.name}'s used credits for "${ct?.name}" back to 0.`);
+    if(!ok)return;
+    S.clients=S.clients.map(c=>c.id===cid?{...c,consignments:(c.consignments||[]).map(cs=>cs.creditTypeId===ctId?{...cs,used:0}:cs)}:c);
+    S.auditLogs=[{id:uid(),type:'allocation',date:now(),clientId:cid,clientName:client?.name||'',creditTypeName:ct?.name||'',description:`Usage reset: ${client?.name} — ${ct?.name}`,before:null,after:0},...S.auditLogs].slice(0,500);
+    await saveShared();toast('Usage reset to 0');renderAll();return;
+  }
+  if(eb){e.stopPropagation();const c=S.clients.find(x=>x.id===eb.dataset.id);if(c)openClientForm(c);return;}
+  if(db){
+    e.stopPropagation();
+    const c=S.clients.find(x=>x.id===db.dataset.id);
+    const ok=await confirmDelete('Delete client?',`"${c?.name||'This client'}" and all their allocations will be permanently removed.`);
+    if(!ok)return;
+    S.auditLogs=[{id:uid(),type:'allocation',date:now(),clientId:db.dataset.id,clientName:c?.name||'',description:'Client deleted: '+(c?.name||''),before:null,after:null},...S.auditLogs].slice(0,500);
+    S.clients=S.clients.filter(x=>x.id!==db.dataset.id);expandedClients.delete(db.dataset.id);
+    saveShared();toast('Client deleted');renderAll();return;
+  }
+  if(card){const cid=card.dataset.clientId;if(expandedClients.has(cid))expandedClients.delete(cid);else expandedClients.add(cid);renderClients();}
+
 });
 document.getElementById('btn-add-client').addEventListener('click',()=>openClientForm(null));
 document.getElementById('btn-cancel-client').addEventListener('click',()=>document.getElementById('client-form-wrap').classList.add('hid'));
@@ -855,7 +946,7 @@ document.getElementById('btn-save-client').addEventListener('click',async()=>{
     S.clients.push({id:newId,name,hostIPs:ips,consignments,contacts});
   }
   S.auditLogs=[...audit,...S.auditLogs].slice(0,500);
-  await saveShared();document.getElementById('client-form-wrap').classList.add('hid');renderAll();
+  await saveShared();document.getElementById('client-form-wrap').classList.add('hid');toast(editId?'Client updated':'Client added');renderAll();
   if(audit.length&&S.settings.triggers?.new_allocation?.enabled)setTimeout(()=>runNotificationCheck(false),500);
 });
 function openClientForm(c){
@@ -868,16 +959,32 @@ function openClientForm(c){
 }
 function renderClients(){
   const el=document.getElementById('clients-list');
-  if(!S.clients.length){el.innerHTML=empty('No clients yet. Add your first client above.');return;}
-  el.innerHTML='<div class="stk">'+S.clients.map(c=>{
-    const ctGroups={};(c.consignments||[]).forEach(cs=>{const ct=S.creditTypes.find(t=>t.id===cs.creditTypeId);ctGroups[cs.creditTypeId]={name:ct?.name||'Unknown',used:cs.used||0,allocated:(cs.batches||[]).reduce((s,b)=>s+(b.allocated||0),0),batches:cs.batches||[],countReliant:ct?.countReliant};});
+  const searchVal=(document.getElementById('client-search')?.value||'').toLowerCase().trim();
+  const sortVal=document.getElementById('client-sort')?.value||'name';
+  let clients=[...S.clients];
+  if(searchVal)clients=clients.filter(c=>c.name.toLowerCase().includes(searchVal)||(c.hostIPs||[]).some(ip=>ip.includes(searchVal)));
+  if(sortVal==='name')clients.sort((a,b)=>a.name.localeCompare(b.name));
+  else if(sortVal==='name-desc')clients.sort((a,b)=>b.name.localeCompare(a.name));
+  else if(sortVal==='used')clients.sort((a,b)=>{const ua=(a.consignments||[]).reduce((s,cs)=>s+(cs.used||0),0),ub=(b.consignments||[]).reduce((s,cs)=>s+(cs.used||0),0);return ub-ua;});
+  else if(sortVal==='allocated')clients.sort((a,b)=>{const aa=(a.consignments||[]).reduce((s,cs)=>s+(cs.batches||[]).reduce((ss,bx)=>ss+(bx.allocated||0),0),0),ab=(b.consignments||[]).reduce((s,cs)=>s+(cs.batches||[]).reduce((ss,bx)=>ss+(bx.allocated||0),0),0);return ab-aa;});
+  if(!clients.length&&!searchVal){el.innerHTML=`<div class="emt"><div class="emt-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><h4>No clients yet</h4><p>Add your first client to start tracking credit usage.</p><button class="bp" onclick="openClientForm(null)" style="margin:0 auto">Add first client</button></div>`;return;}
+  if(!clients.length&&searchVal){el.innerHTML=`<div class="emt"><h4>No clients match "${esc(searchVal)}"</h4><p>Try a different name or IP address.</p></div>`;return;}
+  el.innerHTML='<div class="stk">'+clients.map(c=>{
+    const ctGroups={};(c.consignments||[]).forEach(cs=>{const ct=S.creditTypes.find(t=>t.id===cs.creditTypeId);ctGroups[cs.creditTypeId]={id:cs.creditTypeId,name:ct?.name||'Unknown',used:cs.used||0,allocated:(cs.batches||[]).reduce((s,b)=>s+(b.allocated||0),0),batches:cs.batches||[],countReliant:ct?.countReliant};});
     const tA=Object.values(ctGroups).reduce((s,g)=>s+g.allocated,0),tU=Object.values(ctGroups).reduce((s,g)=>s+g.used,0);
+    const isExpanded=expandedClients.has(c.id);
+    const pctTotal=tA>0?Math.round(tU/tA*100):0;
     const minis=Object.entries(ctGroups).map(([,g])=>{const pct=g.allocated?Math.round(g.used/g.allocated*100):0,pc=pct>90?'d':pct>70?'w':'';const bl=g.batches.map(b=>'<div style="font-size:10px;color:var(--txt3);margin-top:1px">'+fmt(b.allocated)+' credits'+expiryLabel(b.expiry)+'</div>').join('');return '<div class="mcs"><div class="cn">'+esc(g.name)+(g.countReliant?' <span class="badge bv" style="font-size:9px">CR</span>':'')+'</div><div class="cv">'+fmt(g.used)+' / '+fmt(g.allocated)+'</div><div class="pb"><div class="pf '+pc+'" style="width:'+Math.min(pct,100)+'%"></div></div>'+bl+'</div>';}).join('');
     const ips=(c.hostIPs||[]).map(ip=>'<span class="iptag">'+esc(ip)+'</span>').join('');
     const contacts=(c.contacts||[]).map(ct=>'<span style="font-size:11px;color:var(--txt2);margin-right:10px">'+esc(ct.name||'')+(ct.email?' &lt;'+esc(ct.email)+'&gt;':'')+'</span>').join('');
-    return '<div class="cc"><div class="fb mb10"><div><p class="f5 f13" style="margin-bottom:2px">'+esc(c.name)+'</p>'+(contacts?'<div style="margin-bottom:3px">'+contacts+'</div>':'')+'<p class="f12 m">'+fmt(tU)+' / '+fmt(tA)+' total credits used</p></div><div class="fc g6"><button class="bi" data-action="edit-client" data-id="'+c.id+'">'+ICedit+'</button><button class="bi dl" data-action="del-client" data-id="'+c.id+'">'+ICtrash+'</button></div></div>'+(minis?'<div class="fw g6" style="margin-bottom:8px">'+minis+'</div>':'')+(ips?'<div class="fw g6">'+ips+'</div>':'')+'</div>';
+    const chevron=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;transition:transform .2s;${isExpanded?'transform:rotate(180deg)':''}"><polyline points="6 9 12 15 18 9"/></svg>`;
+    const drawerHtml=isExpanded?`<div class="client-drawer"><div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">${Object.values(ctGroups).map(g=>{const pct=g.allocated?Math.round(g.used/g.allocated*100):0,rem=g.allocated-g.used,pc=pct>90?'d':pct>70?'w':'';return `<div style="flex:1;min-width:180px;background:var(--surf);border:.5px solid var(--bdr);border-radius:var(--r);padding:10px 12px"><div class="fc g6 mb8"><span class="f12 f5">${esc(g.name)}</span>${g.countReliant?'<span class="badge bv" style="font-size:9px">CR</span>':''}</div><div class="pw mb8"><div class="pb"><div class="pf ${pc}" style="width:${Math.min(pct,100)}%"></div></div><span class="pl">${pct}%</span></div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px"><div><div class="f11 m">Allocated</div><div class="mn f12">${fmt(g.allocated)}</div></div><div><div class="f11 m">Used</div><div class="mn f12">${fmt(g.used)}</div></div><div><div class="f11 m">Remaining</div><div class="mn f12" style="color:${rem<0?'var(--red-t)':'var(--grn-t)'}">${fmt(rem)}</div></div></div><div class="stk" style="gap:3px;margin-bottom:8px">${g.batches.map(b=>`<div class="f11 m">Batch: ${fmt(b.allocated)} credits${expiryLabel(b.expiry)}</div>`).join('')}</div><button class="bo sm" data-action="reset-usage" data-id="${c.id}" data-ctid="${g.id}">${ICrefresh} Reset used to 0</button></div>`;}).join('')}</div>${contacts?`<div style="margin-bottom:6px"><span class="f11 m f5">Contacts: </span>${contacts}</div>`:''}${ips?`<div class="fw g6">${ips}</div>`:''}</div>`:'';
+    return `<div class="cc${isExpanded?' expanded':''}" data-client-id="${c.id}"><div class="fb mb8" style="pointer-events:none"><div style="flex:1;min-width:0"><div class="fc g6" style="margin-bottom:3px"><p class="f5 f13">${esc(c.name)}</p>${tA>0?`<span class="f11 m">${pctTotal}% used`+'</span>':''}</div>${contacts?`<div style="margin-bottom:3px">${contacts}</div>`:''}<p class="f12 m">${fmt(tU)} / ${fmt(tA)} total credits used</p></div><div class="fc g6" style="pointer-events:auto"><button class="bi" data-action="edit-client" data-id="${c.id}">${ICedit}</button><button class="bi dl" data-action="del-client" data-id="${c.id}">${ICtrash}</button><span style="color:var(--txt3);padding:0 2px">${chevron}</span></div></div>${minis?`<div class="fw g6" style="margin-bottom:8px;pointer-events:none">${minis}</div>`:''}${ips&&!isExpanded?`<div class="fw g6" style="pointer-events:none">${ips}</div>`:''}</div>${drawerHtml}`;
   }).join('')+'</div>';
 }
+// Search and sort listeners
+document.getElementById('client-search')?.addEventListener('input',()=>renderClients());
+document.getElementById('client-sort')?.addEventListener('change',()=>renderClients());
 
 let parsedCSV=null;
 document.getElementById('csv-file').addEventListener('change',function(){
@@ -935,10 +1042,10 @@ document.querySelectorAll('.sb').forEach(b=>{b.addEventListener('click',()=>{doc
 function renderLogs(){
   const uL=S.usageLogs||[],aL=S.auditLogs||[];
   const uEl=document.getElementById('log-usage');
-  if(!uL.length){uEl.innerHTML=empty('No uploads yet.');}
+  if(!uL.length){uEl.innerHTML='<div class="emt"><div class="emt-icon">'+ICupload.replace('width="12" height="12"','width="20" height="20"')+'</div><h4>No uploads yet</h4><p>Upload a CSV in the Upload Usage tab to see logs here.</p></div>';}
   else{uEl.innerHTML='<div class="stk">'+uL.map(log=>{const badges=Object.entries(log.credits||{}).flatMap(([cn,ts])=>Object.entries(ts).map(([tn,n])=>'<span class="badge bg">'+esc(cn)+' · '+esc(tn)+' +'+n.toLocaleString()+'</span>')).join('');const warn=log.unmatched?.length?'<span class="badge ba">'+log.unmatched.length+' unmatched IPs</span>':'';return '<div class="card"><div class="fb mb8"><div class="fc g8">'+ICupload+'<span class="f5 f12">'+new Date(log.date).toLocaleString()+'</span></div><span class="mn f11 m">'+log.rows.toLocaleString()+' rows</span></div><div class="fw g6">'+badges+warn+'</div></div>';}).join('')+'</div>';}
   const aEl=document.getElementById('log-audit');
-  if(!aL.length){aEl.innerHTML=empty('No pool or allocation changes yet.');}
+  if(!aL.length){aEl.innerHTML='<div class="emt"><div class="emt-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="12 8 12 12 14 14"/><path d="M3.05 11a9 9 0 1 0 .5-4.5"/><polyline points="3 3 3 11 11 11"/></svg></div><h4>No changes yet</h4><p>Pool and allocation changes will appear here.</p></div>';}
   else{const rows=aL.map(log=>'<tr><td class="m mn" style="font-size:11px;white-space:nowrap">'+new Date(log.date).toLocaleString()+'</td><td><span class="badge '+(log.type==='pool'?'bb':'ba')+'">'+(log.type==='pool'?'Pool':'Allocation')+'</span></td><td><p style="margin:0;font-size:12px">'+esc(log.description)+'</p>'+(log.creditTypeName?'<p class="f11 m" style="margin:1px 0 0">'+esc(log.creditTypeName)+'</p>':'')+'</td><td class="mn m">'+(log.before!=null?fmt(log.before):'<span style="opacity:.35">—</span>')+'</td><td class="mn f5">'+(log.after!=null?fmt(log.after):'<span style="opacity:.35">—</span>')+'</td></tr>').join('');aEl.innerHTML='<div class="tw"><table><thead><tr><th>Date</th><th>Type</th><th>Description</th><th>Before</th><th>After</th></tr></thead><tbody>'+rows+'</tbody></table></div>';}
 }
 
