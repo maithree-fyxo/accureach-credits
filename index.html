@@ -417,13 +417,31 @@ function expiryLabel(expiry){
 }
 
 // SendGrid
-async function sendEmail(toEmails,subject,htmlBody){
-  const cfg=S.settings;
-  if(!cfg.sgApiKey||!cfg.sgFromEmail)throw new Error('SendGrid not configured.');
-  if(!toEmails||!toEmails.length)throw new Error('No recipients.');
-  const payload={personalizations:[{to:toEmails.map(e=>({email:e}))}],from:{email:cfg.sgFromEmail,name:cfg.sgFromName||'AccuReach Credits'},subject,content:[{type:'text/html',value:htmlBody}]};
-  const resp=await fetch('https://api.sendgrid.com/v3/mail/send',{method:'POST',headers:{'Authorization':'Bearer '+cfg.sgApiKey,'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  if(!resp.ok){const err=await resp.text().catch(()=>'Unknown error');throw new Error('SendGrid '+resp.status+': '+err);}
+async function sendEmail(toEmails, subject, htmlBody) {
+  const cfg = S.settings;
+  if (!cfg.sgApiKey || !cfg.sgFromEmail) throw new Error('SendGrid not configured.');
+  if (!toEmails || !toEmails.length) throw new Error('No recipients.');
+
+  const resp = await fetch(`${SUPABASE_URL}/functions/v1/send-email`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify({
+      to: toEmails,
+      subject,
+      html: htmlBody,
+      apiKey: cfg.sgApiKey,
+      fromEmail: cfg.sgFromEmail,
+      fromName: cfg.sgFromName || 'AccuReach Credits',
+    }),
+  });
+
+  if (!resp.ok) {
+    const err = await resp.text().catch(() => 'Unknown error');
+    throw new Error('Email proxy error ' + resp.status + ': ' + err);
+  }
   return true;
 }
 
