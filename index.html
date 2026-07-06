@@ -276,7 +276,7 @@ input[type=file]::file-selector-button{padding:4px 9px;border-radius:var(--r);bo
 </section>
 </main>
 <script>
-// ── Supabase configuration  ──
+// ── Supabase configuration ──
 // Replace these two values with your own from supabase.com → Project Settings → API
 const SUPABASE_URL = 'https://plrasdlaknijhtxhbdua.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBscmFzZGxha25pamh0eGhiZHVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMzMTM4MjYsImV4cCI6MjA5ODg4OTgyNn0.9qBhOCS2F0wrVDIw5cNf6HRiUBIj1atnmVpWUnVNQsM';
@@ -431,225 +431,57 @@ async function sendEmail(toEmails,subject,htmlBody){
   return true;
 }
 
-// ── Rich email templates ──
+// ── Rich email templates — email-client safe ──
 
-function emailHeader(title,subtitle){
-  return `<div style="background:linear-gradient(135deg,#840243 0%,#ce195f 60%,#af0b4e 100%);border-radius:8px 8px 0 0;padding:22px 28px">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-      <div style="width:28px;height:28px;background:rgba(255,255,255,0.2);border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-      </div>
-      <span style="color:#fff;font-weight:600;font-size:14px;letter-spacing:-0.01em">AccuReach Credits</span>
-    </div>
-    <h1 style="color:#fff;font-size:20px;font-weight:600;margin:0 0 4px;letter-spacing:-0.02em">${title}</h1>
-    <p style="color:rgba(255,255,255,0.75);font-size:13px;margin:0">${subtitle}</p>
-  </div>`;
-}
+function emailHeader(title,subtitle){return `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#840243;border-radius:8px 8px 0 0"><tr><td style="padding:22px 28px"><table cellpadding="0" cellspacing="0" border="0"><tr><td style="background:rgba(255,255,255,0.15);border-radius:6px;padding:5px 8px;vertical-align:middle"><span style="font-size:15px;font-weight:800;color:#ffffff;font-family:Arial,sans-serif">AR</span></td><td style="padding-left:10px;vertical-align:middle"><span style="color:#ffffff;font-weight:600;font-size:13px;font-family:Arial,sans-serif">AccuReach Credits</span></td></tr></table><div style="height:10px"></div><h1 style="color:#ffffff;font-size:20px;font-weight:700;margin:0 0 4px;font-family:Arial,sans-serif">${title}</h1><p style="color:#f0c0d0;font-size:13px;margin:0;font-family:Arial,sans-serif">${subtitle}</p></td></tr></table>`;}
 
-function emailFooter(clientName){
-  return `<hr style="border:none;border-top:1px solid #e5e5e3;margin:24px 0 16px"/>
-    <p style="font-size:11px;color:#aaa;margin:0;line-height:1.5">This is an automated notification from the AccuReach Credits portal. You are receiving this because you are listed as a contact for <strong style="color:#888">${esc(clientName)}</strong>.</p>`;
-}
+function emailFooter(clientName){return `<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-top:1px solid #eeeeee;padding-top:16px"><p style="font-size:11px;color:#aaaaaa;margin:0;line-height:1.5;font-family:Arial,sans-serif">This is an automated notification from the AccuReach Credits portal. You are receiving this because you are listed as a contact for <strong style="color:#888888">${esc(clientName)}</strong>.</p></td></tr></table>`;}
 
-function emailUsageBar(used,total){
-  const pct=total>0?Math.min(Math.round(used/total*100),100):0;
-  const barColor=pct>=100?'#a32d2d':pct>=90?'#EF9F27':'#1D9E75';
-  return `<div style="margin:0 0 20px">
-    <div style="display:flex;justify-content:space-between;margin-bottom:5px">
-      <span style="font-size:12px;color:#6b6b67">Usage</span>
-      <span style="font-size:12px;color:#6b6b67">${pct}% used</span>
-    </div>
-    <div style="background:#f4f4f2;border-radius:4px;height:6px;overflow:hidden">
-      <div style="width:${pct}%;height:100%;background:${barColor};border-radius:4px"></div>
-    </div>
-  </div>`;
-}
+function emailUsageBar(used,total){const pct=total>0?Math.min(Math.round(used/total*100),100):0;const barColor=pct>=100?'#a32d2d':pct>=90?'#EF9F27':'#ce195f';const ep=100-pct;return `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px"><tr><td style="font-size:12px;color:#6b6b67;font-family:Arial,sans-serif;padding-bottom:5px">Usage</td><td style="font-size:12px;color:#6b6b67;font-family:Arial,sans-serif;padding-bottom:5px;text-align:right">${pct}% used</td></tr><tr><td colspan="2"><table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f4f2;border-radius:4px"><tr><td width="${pct}%" height="6" style="background:${barColor};border-radius:4px;font-size:0;line-height:0">&nbsp;</td>${ep>0?`<td width="${ep}%" height="6" style="font-size:0;line-height:0">&nbsp;</td>`:''}</tr></table></td></tr></table>`;}
 
-function emailDetailsTable(rows){
-  return `<div style="border:1px solid #e5e5e3;border-radius:8px;overflow:hidden;margin-bottom:20px">
-    <div style="background:#f7f7f5;padding:10px 16px;border-bottom:1px solid #e5e5e3">
-      <p style="font-size:11px;font-weight:600;color:#6b6b67;margin:0;text-transform:uppercase;letter-spacing:0.05em">Credit batch details</p>
-    </div>
-    <table style="width:100%;border-collapse:collapse;font-size:13px">
-      ${rows.map((r,i)=>`<tr style="${i<rows.length-1?'border-bottom:1px solid #e5e5e3':''}">
-        <td style="padding:10px 16px;color:#6b6b67">${r[0]}</td>
-        <td style="padding:10px 16px;text-align:right">${r[1]}</td>
-      </tr>`).join('')}
-    </table>
-  </div>`;
-}
+function emailDetailsTable(rows){return `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #eeeeee;border-radius:8px;margin-bottom:20px;border-collapse:separate;border-spacing:0"><tr><td colspan="2" style="background:#fce8f0;padding:10px 16px;border-radius:8px 8px 0 0;border-bottom:1px solid #eeeeee"><span style="font-size:11px;font-weight:700;color:#840243;font-family:Arial,sans-serif;text-transform:uppercase;letter-spacing:0.05em">Credit batch details</span></td></tr>${rows.map((r,i)=>`<tr><td style="padding:10px 16px;color:#6b6b67;font-size:13px;font-family:Arial,sans-serif;${i<rows.length-1?'border-bottom:1px solid #eeeeee':''}">${r[0]}</td><td style="padding:10px 16px;text-align:right;font-size:13px;font-family:Arial,sans-serif;${i<rows.length-1?'border-bottom:1px solid #eeeeee':''}">${r[1]}</td></tr>`).join('')}</table>`;}
 
-function emailAlertBanner(urgency,message,type){
-  const styles={
-    green:{bg:'#e1f5ee',border:'rgba(29,158,117,0.3)',color:'#0f6e56'},
-    amber:{bg:'#faeeda',border:'rgba(133,79,11,0.3)',color:'#854f0b'},
-    red:{bg:'#fcebeb',border:'rgba(163,45,45,0.3)',color:'#a32d2d'}
-  };
-  const s=styles[type]||styles.amber;
-  return `<div style="background:${s.bg};border:1px solid ${s.border};border-radius:8px;padding:14px 16px;margin-bottom:20px;display:flex;gap:12px;align-items:flex-start">
-    <div style="flex-shrink:0;width:20px;height:20px;background:${s.color};border-radius:50%;display:flex;align-items:center;justify-content:center;margin-top:1px">
-      <span style="color:#fff;font-size:12px;font-weight:700">!</span>
-    </div>
-    <div>
-      <p style="font-size:13px;font-weight:600;color:${s.color};margin:0 0 2px">${urgency}</p>
-      <p style="font-size:13px;color:${s.color};margin:0;line-height:1.5">${message}</p>
-    </div>
-  </div>`;
-}
+function emailAlertBanner(urgency,message,type){const s={green:{bg:'#e1f5ee',border:'#9FE1CB',color:'#0f6e56'},amber:{bg:'#faeeda',border:'#FAC775',color:'#854f0b'},red:{bg:'#fcebeb',border:'#F7C1C1',color:'#a32d2d'}}[type]||{bg:'#faeeda',border:'#FAC775',color:'#854f0b'};return `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${s.bg};border:1px solid ${s.border};border-radius:8px;margin-bottom:20px"><tr><td width="36" style="padding:14px 0 14px 16px;vertical-align:top"><table cellpadding="0" cellspacing="0" border="0"><tr><td width="20" height="20" style="background:${s.color};border-radius:10px;text-align:center;vertical-align:middle"><span style="color:#ffffff;font-size:13px;font-weight:700;font-family:Arial,sans-serif;line-height:20px">!</span></td></tr></table></td><td style="padding:14px 16px 14px 8px;vertical-align:top"><p style="font-size:13px;font-weight:700;color:${s.color};margin:0 0 3px;font-family:Arial,sans-serif">${urgency}</p><p style="font-size:13px;color:${s.color};margin:0;line-height:1.5;font-family:Arial,sans-serif">${message}</p></td></tr></table>`;}
 
-function emailExpiryBadge(expStr,type){
-  const colors={green:{bg:'#e1f5ee',color:'#0f6e56'},amber:{bg:'#faeeda',color:'#854f0b'},red:{bg:'#fcebeb',color:'#a32d2d'}};
-  const c=colors[type]||colors.amber;
-  return `<span style="background:${c.bg};color:${c.color};font-size:11px;padding:3px 8px;border-radius:4px;font-family:'Courier New',monospace;font-weight:500">${expStr}</span>`;
-}
+function emailExpiryBadge(expStr,type){const c={green:{bg:'#e1f5ee',color:'#0f6e56'},amber:{bg:'#faeeda',color:'#854f0b'},red:{bg:'#fcebeb',color:'#a32d2d'}}[type]||{bg:'#faeeda',color:'#854f0b'};return `<span style="background:${c.bg};color:${c.color};font-size:11px;padding:3px 8px;border-radius:4px;font-family:'Courier New',Courier,monospace;font-weight:600">${expStr}</span>`;}
 
-function emailValueCell(val,opts={}){
-  const style=`color:${opts.color||'#1a1a18'};font-family:'Courier New',monospace;font-weight:500`;
-  return `<span style="${style}">${val}</span>${opts.note?` <span style="color:#6b6b67;font-size:11px;font-family:Arial,sans-serif">${opts.note}</span>`:''}`;
-}
+function emailValueCell(val,opts={}){return `<span style="color:${opts.color||'#1a1a18'};font-family:'Courier New',Courier,monospace;font-weight:600">${val}</span>${opts.note?` <span style="color:#6b6b67;font-size:11px;font-family:Arial,sans-serif">${opts.note}</span>`:''}`;}
 
-// Rich expiry email
-function buildExpiryEmail({clientName,ctName,allocated,used,expStr,daysLeft,batchId}){
-  const remaining=allocated-used;
-  const pct=allocated>0?Math.round(used/allocated*100):0;
+function emailWrap(bodyHtml){return `<!DOCTYPE html><html><head><meta charset="UTF-8"/></head><body style="margin:0;padding:20px;background:#f9f4f6;font-family:Arial,sans-serif"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center"><table width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%"><tr><td>${bodyHtml}</td></tr><tr><td style="padding:16px 0;text-align:center"><span style="font-size:11px;color:#b89aaa;font-family:Arial,sans-serif">AccuReach Credits Portal</span></td></tr></table></td></tr></table></body></html>`;}
+
+function buildExpiryEmail({clientName,ctName,allocated,used,expStr,daysLeft}){
+  const remaining=allocated-used,pct=allocated>0?Math.round(used/allocated*100):0;
   let alertType,urgency,alertMsg,headerTitle,headerSub,badgeType;
-  if(daysLeft===0){
-    alertType='red';urgency='Credits expired today';badgeType='red';
-    alertMsg=`This credit batch for <strong>${esc(ctName)}</strong> expired on <strong>${expStr}</strong>. Access may be affected — please contact your account manager immediately.`;
-    headerTitle='Credits have expired';headerSub='Immediate action required';
-  } else if(daysLeft<=7){
-    alertType='red';urgency=`${daysLeft} day${daysLeft===1?'':'s'} until expiry`;badgeType='red';
-    alertMsg=`Your credit batch expires on <strong>${expStr}</strong>. Immediate renewal required to prevent service disruption.`;
-    headerTitle=`Credit expiry reminder — 1 week`;headerSub='Urgent: credits expiring very soon';
-  } else if(daysLeft<=32){
-    alertType='amber';urgency=`${daysLeft} days until expiry`;badgeType='amber';
-    alertMsg=`Your credit batch expires on <strong>${expStr}</strong>. Please renew before this date to avoid service interruption.`;
-    headerTitle='Credit expiry reminder — 1 month';headerSub='Action required: credits expiring soon';
-  } else {
-    alertType='green';urgency=`${daysLeft} days until expiry`;badgeType='green';
-    alertMsg=`Your credit batch expires on <strong>${expStr}</strong>. No immediate action needed — this is an advance notice.`;
-    headerTitle='Credit expiry reminder — 3 months';headerSub='Plan ahead: credits expiring in ~3 months';
-  }
-  const tableRows=[
-    ['Credit type',`<span style="font-family:'Courier New',monospace;color:#185fa5;font-weight:500">${esc(ctName)}</span>`],
-    ['Allocated credits',emailValueCell(fmt(allocated))],
-    ['Credits used',emailValueCell(fmt(used),{note:`(${pct}%)`})],
-    ['Credits remaining',emailValueCell(fmt(remaining),{color:remaining<0?'#a32d2d':'#0f6e56'})],
-    ['Expiry date',emailExpiryBadge(expStr,badgeType)]
-  ];
-  return `<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto">
-    ${emailHeader(headerTitle,headerSub)}
-    <div style="background:#fff;border:1px solid #e5e5e3;border-top:none;border-radius:0 0 8px 8px;padding:28px">
-      <p style="font-size:14px;color:#1a1a18;margin:0 0 20px;line-height:1.6">Hi <strong>${esc(clientName)} team</strong>,</p>
-      ${emailAlertBanner(urgency,alertMsg,alertType)}
-      ${emailDetailsTable(tableRows)}
-      ${emailUsageBar(used,allocated)}
-      <p style="font-size:14px;color:#1a1a18;margin:0 0 12px;line-height:1.6">Please contact your AccuReach account manager to discuss renewing or extending your credit allocation before the expiry date.</p>
-      <p style="font-size:14px;color:#6b6b67;margin:0 0 24px;line-height:1.6">If you have already arranged a renewal, please disregard this notice.</p>
-      ${emailFooter(clientName)}
-    </div>
-  </div>`;
+  if(daysLeft===0){alertType='red';urgency='Credits expired today';badgeType='red';alertMsg=`This credit batch for <strong>${esc(ctName)}</strong> expired on <strong>${expStr}</strong>. Access may be affected — contact your account manager immediately.`;headerTitle='Credits have expired';headerSub='Immediate action required';}
+  else if(daysLeft<=7){alertType='red';urgency=`${daysLeft} day${daysLeft===1?'':'s'} until expiry`;badgeType='red';alertMsg=`Your credit batch expires on <strong>${expStr}</strong>. Immediate renewal required to prevent service disruption.`;headerTitle='Credit expiry reminder — 1 week';headerSub='Urgent: credits expiring very soon';}
+  else if(daysLeft<=32){alertType='amber';urgency=`${daysLeft} days until expiry`;badgeType='amber';alertMsg=`Your credit batch expires on <strong>${expStr}</strong>. Please renew before this date to avoid service interruption.`;headerTitle='Credit expiry reminder — 1 month';headerSub='Action required: credits expiring soon';}
+  else{alertType='green';urgency=`${daysLeft} days until expiry`;badgeType='green';alertMsg=`Your credit batch expires on <strong>${expStr}</strong>. No immediate action needed — this is an advance notice.`;headerTitle='Credit expiry reminder — 3 months';headerSub='Plan ahead: credits expiring in ~3 months';}
+  const tableRows=[['Credit type',`<span style="font-family:'Courier New',Courier,monospace;color:#840243;font-weight:600">${esc(ctName)}</span>`],['Allocated credits',emailValueCell(fmt(allocated))],['Credits used',emailValueCell(fmt(used),{note:`(${pct}%)`})],['Credits remaining',emailValueCell(fmt(remaining),{color:remaining<0?'#a32d2d':'#0f6e56'})],['Expiry date',emailExpiryBadge(expStr,badgeType)]];
+  return emailWrap(`${emailHeader(headerTitle,headerSub)}<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border:1px solid #eeeeee;border-top:none;border-radius:0 0 8px 8px"><tr><td style="padding:28px"><p style="font-size:14px;color:#1a0810;margin:0 0 20px;line-height:1.6;font-family:Arial,sans-serif">Hi <strong>${esc(clientName)} team</strong>,</p>${emailAlertBanner(urgency,alertMsg,alertType)}${emailDetailsTable(tableRows)}${emailUsageBar(used,allocated)}<p style="font-size:14px;color:#1a0810;margin:0 0 12px;line-height:1.6;font-family:Arial,sans-serif">Please contact your AccuReach account manager to discuss renewing or extending your credit allocation before the expiry date.</p><p style="font-size:14px;color:#6b4057;margin:0 0 24px;line-height:1.6;font-family:Arial,sans-serif">If you have already arranged a renewal, please disregard this notice.</p>${emailFooter(clientName)}</td></tr></table>`);
 }
 
-// Rich usage email
 function buildUsageEmail({clientName,ctName,used,totalAlloc,usagePct,isExceeded}){
-  const remaining=totalAlloc-used;
-  const pct=Math.round(usagePct*100);
+  const remaining=totalAlloc-used,pct=Math.round(usagePct*100);
   const alertType=isExceeded?'red':'amber';
-  const urgency=isExceeded?'Credit limit exceeded':`Usage at ${pct}%`;
-  const alertMsg=isExceeded
-    ?`<strong>${esc(clientName)}</strong> has exceeded their allocated <strong>${esc(ctName)}</strong> credits. Immediate action is required to restore normal service.`
-    :`<strong>${esc(clientName)}</strong> has used <strong>${pct}%</strong> of their allocated <strong>${esc(ctName)}</strong> credits. Consider topping up to avoid disruption.`;
-  const tableRows=[
-    ['Credit type',`<span style="font-family:'Courier New',monospace;color:#185fa5;font-weight:500">${esc(ctName)}</span>`],
-    ['Allocated credits',emailValueCell(fmt(totalAlloc))],
-    ['Credits used',emailValueCell(fmt(used),{note:`(${pct}%)`})],
-    ['Credits remaining',emailValueCell(fmt(remaining),{color:remaining<0?'#a32d2d':'#0f6e56'})]
-  ];
-  return `<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto">
-    ${emailHeader(isExceeded?'Credit limit exceeded':'Credit usage warning',isExceeded?'Immediate action required':`Usage at ${pct}% — action recommended`)}
-    <div style="background:#fff;border:1px solid #e5e5e3;border-top:none;border-radius:0 0 8px 8px;padding:28px">
-      <p style="font-size:14px;color:#1a1a18;margin:0 0 20px;line-height:1.6">Hi <strong>${esc(clientName)} team</strong>,</p>
-      ${emailAlertBanner(urgency,alertMsg,alertType)}
-      ${emailDetailsTable(tableRows)}
-      ${emailUsageBar(used,totalAlloc)}
-      <p style="font-size:14px;color:#1a1a18;margin:0 0 24px;line-height:1.6">${isExceeded?'Please contact your AccuReach account manager immediately to allocate additional credits.':'Please contact your AccuReach account manager to discuss allocating additional credits before your limit is reached.'}</p>
-      ${emailFooter(clientName)}
-    </div>
-  </div>`;
+  const alertMsg=isExceeded?`<strong>${esc(clientName)}</strong> has exceeded their allocated <strong>${esc(ctName)}</strong> credits. Immediate action is required.`:`<strong>${esc(clientName)}</strong> has used <strong>${pct}%</strong> of their allocated <strong>${esc(ctName)}</strong> credits. Consider topping up to avoid disruption.`;
+  const tableRows=[['Credit type',`<span style="font-family:'Courier New',Courier,monospace;color:#840243;font-weight:600">${esc(ctName)}</span>`],['Allocated credits',emailValueCell(fmt(totalAlloc))],['Credits used',emailValueCell(fmt(used),{note:`(${pct}%)`})],['Credits remaining',emailValueCell(fmt(remaining),{color:remaining<0?'#a32d2d':'#0f6e56'})]];
+  return emailWrap(`${emailHeader(isExceeded?'Credit limit exceeded':'Credit usage warning',isExceeded?'Immediate action required':`Usage at ${pct}% — action recommended`)}<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border:1px solid #eeeeee;border-top:none;border-radius:0 0 8px 8px"><tr><td style="padding:28px"><p style="font-size:14px;color:#1a0810;margin:0 0 20px;line-height:1.6;font-family:Arial,sans-serif">Hi <strong>${esc(clientName)} team</strong>,</p>${emailAlertBanner(isExceeded?'Credit limit exceeded':`Usage at ${pct}%`,alertMsg,alertType)}${emailDetailsTable(tableRows)}${emailUsageBar(used,totalAlloc)}<p style="font-size:14px;color:#1a0810;margin:0 0 24px;line-height:1.6;font-family:Arial,sans-serif">${isExceeded?'Please contact your AccuReach account manager immediately to allocate additional credits.':'Please contact your AccuReach account manager to discuss allocating additional credits before your limit is reached.'}</p>${emailFooter(clientName)}</td></tr></table>`);
 }
 
-// Rich new allocation email
 function buildNewAllocationEmail({clientName,ctName,allocated,expiry}){
   const expStr=expiry?new Date(expiry).toLocaleDateString('en-GB',{day:'2-digit',month:'long',year:'numeric'}):'No expiry set';
-  const tableRows=[
-    ['Credit type',`<span style="font-family:'Courier New',monospace;color:#185fa5;font-weight:500">${esc(ctName)}</span>`],
-    ['Credits allocated',emailValueCell(fmt(allocated),{color:'#0f6e56'})],
-    ['Expiry date',expiry?emailExpiryBadge(expStr,'green'):`<span style="color:#6b6b67">No expiry set</span>`]
-  ];
-  return `<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto">
-    ${emailHeader('New credits allocated','Your credit allocation has been updated')}
-    <div style="background:#fff;border:1px solid #e5e5e3;border-top:none;border-radius:0 0 8px 8px;padding:28px">
-      <p style="font-size:14px;color:#1a1a18;margin:0 0 20px;line-height:1.6">Hi <strong>${esc(clientName)} team</strong>,</p>
-      <div style="background:#e1f5ee;border:1px solid rgba(29,158,117,0.3);border-radius:8px;padding:14px 16px;margin-bottom:20px;display:flex;gap:12px;align-items:center">
-        <div style="flex-shrink:0;width:20px;height:20px;background:#0f6e56;border-radius:50%;display:flex;align-items:center;justify-content:center">
-          <span style="color:#fff;font-size:13px;font-weight:700">✓</span>
-        </div>
-        <p style="font-size:13px;color:#0f6e56;margin:0"><strong>${fmt(allocated)}</strong> new <strong>${esc(ctName)}</strong> credits have been added to your account.</p>
-      </div>
-      ${emailDetailsTable(tableRows)}
-      <p style="font-size:14px;color:#1a1a18;margin:0 0 24px;line-height:1.6">These credits are now available for use. If you have any questions about your allocation, please contact your AccuReach account manager.</p>
-      ${emailFooter(clientName)}
-    </div>
-  </div>`;
+  const tableRows=[['Credit type',`<span style="font-family:'Courier New',Courier,monospace;color:#840243;font-weight:600">${esc(ctName)}</span>`],['Credits allocated',emailValueCell(fmt(allocated),{color:'#0f6e56'})],['Expiry date',expiry?emailExpiryBadge(expStr,'green'):`<span style="color:#6b6b67;font-family:Arial,sans-serif">No expiry set</span>`]];
+  return emailWrap(`${emailHeader('New credits allocated','Your credit allocation has been updated')}<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border:1px solid #eeeeee;border-top:none;border-radius:0 0 8px 8px"><tr><td style="padding:28px"><p style="font-size:14px;color:#1a0810;margin:0 0 20px;line-height:1.6;font-family:Arial,sans-serif">Hi <strong>${esc(clientName)} team</strong>,</p><table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#e1f5ee;border:1px solid #9FE1CB;border-radius:8px;margin-bottom:20px"><tr><td width="36" style="padding:14px 0 14px 16px;vertical-align:middle"><table cellpadding="0" cellspacing="0" border="0"><tr><td width="20" height="20" style="background:#0f6e56;border-radius:10px;text-align:center;vertical-align:middle"><span style="color:#ffffff;font-size:13px;font-weight:700;font-family:Arial,sans-serif">&#10003;</span></td></tr></table></td><td style="padding:14px 16px 14px 8px;vertical-align:middle"><p style="font-size:13px;color:#0f6e56;margin:0;font-family:Arial,sans-serif"><strong>${fmt(allocated)}</strong> new <strong>${esc(ctName)}</strong> credits have been added to your account.</p></td></tr></table>${emailDetailsTable(tableRows)}<p style="font-size:14px;color:#1a0810;margin:0 0 24px;line-height:1.6;font-family:Arial,sans-serif">These credits are now available for use. If you have any questions, please contact your AccuReach account manager.</p>${emailFooter(clientName)}</td></tr></table>`);
 }
 
-// Rich high daily usage email (admin only)
 function buildHighDailyEmail({ctName,total,threshold,clientBreakdown,dateStr}){
-  const tableRows=[
-    ['Credit type',`<span style="font-family:'Courier New',monospace;color:#185fa5;font-weight:500">${esc(ctName)}</span>`],
-    ['Date',`<span style="font-family:'Courier New',monospace;color:#1a1a18">${dateStr}</span>`],
-    ['Total credits used',emailValueCell(fmt(total),{color:'#a32d2d'})],
-    ['Configured threshold',emailValueCell(fmt(threshold))]
-  ];
-  const breakdownRows=clientBreakdown.map(([cn,n])=>`<tr style="border-bottom:1px solid #e5e5e3">
-    <td style="padding:8px 16px;color:#1a1a18;font-size:13px">${esc(cn)}</td>
-    <td style="padding:8px 16px;text-align:right;font-family:'Courier New',monospace;font-size:13px;color:#a32d2d">${fmt(n)}</td>
-  </tr>`).join('');
-  return `<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto">
-    ${emailHeader('High daily usage alert','Central credit pool threshold exceeded')}
-    <div style="background:#fff;border:1px solid #e5e5e3;border-top:none;border-radius:0 0 8px 8px;padding:28px">
-      ${emailAlertBanner(`${fmt(total)} credits used today`,`<strong>${esc(ctName)}</strong> usage has exceeded your daily threshold of <strong>${fmt(threshold)}</strong> credits.`,'red')}
-      ${emailDetailsTable(tableRows)}
-      <div style="border:1px solid #e5e5e3;border-radius:8px;overflow:hidden;margin-bottom:20px">
-        <div style="background:#f7f7f5;padding:10px 16px;border-bottom:1px solid #e5e5e3">
-          <p style="font-size:11px;font-weight:600;color:#6b6b67;margin:0;text-transform:uppercase;letter-spacing:0.05em">Breakdown by client</p>
-        </div>
-        <table style="width:100%;border-collapse:collapse">
-          <tr style="background:#f7f7f5;border-bottom:1px solid #e5e5e3">
-            <th style="padding:8px 16px;text-align:left;font-size:11px;color:#6b6b67;font-weight:600">Client</th>
-            <th style="padding:8px 16px;text-align:right;font-size:11px;color:#6b6b67;font-weight:600">Credits used</th>
-          </tr>
-          ${breakdownRows}
-        </table>
-      </div>
-      <p style="font-size:14px;color:#1a1a18;margin:0 0 24px;line-height:1.6">Review client usage in the AccuReach Credits portal and consider adjusting credit allocations or thresholds if needed.</p>
-      <hr style="border:none;border-top:1px solid #e5e5e3;margin:24px 0 16px"/>
-      <p style="font-size:11px;color:#aaa;margin:0;line-height:1.5">This alert was sent to AccuReach admin addresses. Daily threshold: ${fmt(threshold)} credits.</p>
-    </div>
-  </div>`;
+  const tableRows=[['Credit type',`<span style="font-family:'Courier New',Courier,monospace;color:#840243;font-weight:600">${esc(ctName)}</span>`],['Date',`<span style="font-family:'Courier New',Courier,monospace;color:#1a1a18">${dateStr}</span>`],['Total credits used',emailValueCell(fmt(total),{color:'#a32d2d'})],['Configured threshold',emailValueCell(fmt(threshold))]];
+  const breakdownRows=clientBreakdown.map(([cn,n])=>`<tr style="border-bottom:1px solid #eeeeee"><td style="padding:8px 16px;color:#1a1a18;font-size:13px;font-family:Arial,sans-serif">${esc(cn)}</td><td style="padding:8px 16px;text-align:right;font-family:'Courier New',Courier,monospace;font-size:13px;color:#a32d2d;font-weight:600">${fmt(n)}</td></tr>`).join('');
+  return emailWrap(`${emailHeader('High daily usage alert','Central credit pool threshold exceeded')}<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border:1px solid #eeeeee;border-top:none;border-radius:0 0 8px 8px"><tr><td style="padding:28px">${emailAlertBanner(`${fmt(total)} credits used today`,`<strong>${esc(ctName)}</strong> usage has exceeded your daily threshold of <strong>${fmt(threshold)}</strong> credits.`,'red')}${emailDetailsTable(tableRows)}<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #eeeeee;border-radius:8px;margin-bottom:20px;border-collapse:separate;border-spacing:0"><tr><td colspan="2" style="background:#fce8f0;padding:10px 16px;border-radius:8px 8px 0 0;border-bottom:1px solid #eeeeee"><span style="font-size:11px;font-weight:700;color:#840243;font-family:Arial,sans-serif;text-transform:uppercase;letter-spacing:0.05em">Breakdown by client</span></td></tr><tr><td style="padding:8px 16px;font-size:11px;color:#840243;font-weight:700;font-family:Arial,sans-serif;border-bottom:1px solid #eeeeee;background:#fce8f0">Client</td><td style="padding:8px 16px;text-align:right;font-size:11px;color:#840243;font-weight:700;font-family:Arial,sans-serif;border-bottom:1px solid #eeeeee;background:#fce8f0">Credits used</td></tr>${breakdownRows}</table><p style="font-size:14px;color:#1a1a18;margin:0 0 24px;line-height:1.6;font-family:Arial,sans-serif">Review client usage in the AccuReach Credits portal and consider adjusting allocations or thresholds if needed.</p><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-top:1px solid #eeeeee;padding-top:16px"><p style="font-size:11px;color:#aaaaaa;margin:0;font-family:Arial,sans-serif">This alert was sent to AccuReach admin addresses. Daily threshold: ${fmt(threshold)} credits.</p></td></tr></table></td></tr></table>`);
 }
 
-// Simple test email template (kept for test button)
 function emailTemplate(title,lines){
-  return `<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto">
-    ${emailHeader(title,'AccuReach Credits notification')}
-    <div style="background:#fff;border:1px solid #e5e5e3;border-top:none;border-radius:0 0 8px 8px;padding:28px">
-      ${lines.map(l=>`<p style="margin:0 0 12px;font-size:14px;color:#1a1a18;line-height:1.6">${l}</p>`).join('')}
-      <hr style="border:none;border-top:1px solid #e5e5e3;margin:20px 0"/>
-      <p style="font-size:11px;color:#aaa;margin:0">This is an automated notification from AccuReach Credits portal.</p>
-    </div>
-  </div>`;
+  return emailWrap(`${emailHeader(title,'AccuReach Credits notification')}<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border:1px solid #eeeeee;border-top:none;border-radius:0 0 8px 8px"><tr><td style="padding:28px">${lines.map(l=>`<p style="margin:0 0 12px;font-size:14px;color:#1a1a18;line-height:1.6;font-family:Arial,sans-serif">${l}</p>`).join('')}<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:8px"><tr><td style="border-top:1px solid #eeeeee;padding-top:16px"><p style="font-size:11px;color:#aaaaaa;margin:0;font-family:Arial,sans-serif">This is an automated notification from AccuReach Credits portal.</p></td></tr></table></td></tr></table>`);
 }
 
 async function runNotificationCheck(showFeedback=true){
