@@ -235,9 +235,9 @@ input[type=file]::file-selector-button{padding:4px 9px;border-radius:var(--r);bo
 <section id="tab-notifications" class="pnl">
   <div class="sh"><h2>Notifications</h2><button class="bp" id="btn-run-notif-check"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Run check now</button></div>
   <div class="card card-form mb14">
-    <h3>Resend configuration</h3>
+    <h3>SendGrid configuration</h3>
     <div class="g2 mb14">
-      <div><label class="fl">Resend API key</label><input type="password" id="sg-api-key" placeholder="re_xxxxxxxxxx"/></div>
+      <div><label class="fl">SendGrid API key</label><input type="password" id="sg-api-key" placeholder="SG.xxxxxxxxxx"/></div>
       <div><label class="fl">From email address</label><input type="email" id="sg-from-email" placeholder="notifications@accureach.com"/></div>
     </div>
     <div class="mb14"><label class="fl">From name</label><input type="text" id="sg-from-name" placeholder="AccuReach Credits" style="max-width:300px"/></div>
@@ -416,14 +416,14 @@ function expiryLabel(expiry){
   return ' <span class="exp-badge exp-'+status+'">exp '+label+'</span>';
 }
 
-// Resend
+// SendGrid
 async function sendEmail(toEmails,subject,htmlBody){
   const cfg=S.settings;
-  if(!cfg.sgApiKey||!cfg.sgFromEmail)throw new Error('Resend not configured — add your API key and from address in Notifications.');
+  if(!cfg.sgApiKey||!cfg.sgFromEmail)throw new Error('SendGrid not configured — add your API key and from address in Notifications.');
   if(!toEmails||!toEmails.length)throw new Error('No recipients.');
-  const payload={from:`${cfg.sgFromName||'AccuReach Credits'} <${cfg.sgFromEmail}>`,to:toEmails,subject,html:htmlBody};
-  const resp=await fetch('https://api.resend.com/emails',{method:'POST',headers:{'Authorization':'Bearer '+cfg.sgApiKey,'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  if(!resp.ok){const err=await resp.json().catch(()=>({message:'Unknown error'}));throw new Error('Resend error '+resp.status+': '+(err.message||JSON.stringify(err)));}
+  const payload={personalizations:[{to:toEmails.map(e=>({email:e}))}],from:{email:cfg.sgFromEmail,name:cfg.sgFromName||'AccuReach Credits'},subject,content:[{type:'text/html',value:htmlBody}]};
+  const resp=await fetch('https://api.sendgrid.com/v3/mail/send',{method:'POST',headers:{'Authorization':'Bearer '+cfg.sgApiKey,'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  if(!resp.ok){const err=await resp.text().catch(()=>'Unknown error');throw new Error('SendGrid '+resp.status+': '+err);}
   return true;
 }
 
@@ -649,7 +649,7 @@ function emailTemplate(title,lines){
 }
 
 async function runNotificationCheck(showFeedback=true){
-  if(!S.settings.sgApiKey||!S.settings.sgFromEmail){if(showFeedback)alert('Resend not configured. Go to Notifications tab and add your API key.');return;}
+  if(!S.settings.sgApiKey||!S.settings.sgFromEmail){if(showFeedback)alert('SendGrid not configured. Go to Notifications tab.');return;}
   const today=new Date();today.setHours(0,0,0,0);
   const triggers=S.settings.triggers||{},sent=S.settings.sentNotifKeys||{};
   const adminEmails=(S.settings.adminEmails||[]).map(e=>e.email).filter(Boolean);
@@ -789,13 +789,13 @@ document.getElementById('btn-save-sg').addEventListener('click',async()=>{
   S.settings.sgFromEmail=document.getElementById('sg-from-email').value.trim();
   S.settings.sgFromName=document.getElementById('sg-from-name').value.trim()||'AccuReach Credits';
   await saveShared();
-  const msg=document.getElementById('sg-msg');msg.innerHTML='<div class="alrt ok">'+ICcheck+' Resend configuration saved.</div>';setTimeout(()=>{msg.innerHTML='';},3000);
+  const msg=document.getElementById('sg-msg');msg.innerHTML='<div class="alrt ok">'+ICcheck+' SendGrid configuration saved.</div>';setTimeout(()=>{msg.innerHTML='';},3000);
 });
 document.getElementById('btn-test-sg').addEventListener('click',async()=>{
   const msg=document.getElementById('sg-msg'),email=document.getElementById('sg-from-email').value.trim();
-  if(!document.getElementById('sg-api-key').value.trim()||!email){msg.innerHTML='<div class="alrt er">Save your Resend configuration first.</div>';return;}
+  if(!document.getElementById('sg-api-key').value.trim()||!email){msg.innerHTML='<div class="alrt er">Save your SendGrid configuration first.</div>';return;}
   msg.innerHTML='<div class="alrt info">Sending test email...</div>';
-  try{await sendEmail([email],'[AccuReach] Test notification',emailTemplate('Test Email',['This is a test notification from AccuReach Credits portal.','If you received this, your Resend configuration is working correctly.']));msg.innerHTML='<div class="alrt ok">'+ICcheck+' Test email sent to '+esc(email)+'</div>';}
+  try{await sendEmail([email],'[AccuReach] Test notification',emailTemplate('Test Email',['This is a test notification from AccuReach Credits portal.','If you received this, your SendGrid configuration is working correctly.']));msg.innerHTML='<div class="alrt ok">'+ICcheck+' Test email sent to '+esc(email)+'</div>';}
   catch(e){msg.innerHTML='<div class="alrt er">Failed: '+esc(e.message)+'</div>';}
 });
 document.getElementById('btn-add-admin-email').addEventListener('click',()=>{adminEmailRows.push({id:uid(),email:''});renderAdminEmailRows();});
