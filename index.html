@@ -282,7 +282,7 @@ const SUPABASE_URL = 'https://plrasdlaknijhtxhbdua.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBscmFzZGxha25pamh0eGhiZHVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMzMTM4MjYsImV4cCI6MjA5ODg4OTgyNn0.9qBhOCS2F0wrVDIw5cNf6HRiUBIj1atnmVpWUnVNQsM';
 const SKEY='accureach_prod';
 
-// Supabase REST helpers (no SDK needed — plain fetch)
+// Supabase REST  helpers (no SDK needed — plain fetch)
 // Table: app_state  Columns: key text PRIMARY KEY, value jsonb
 async function sbGet(key){
   const r=await fetch(`${SUPABASE_URL}/rest/v1/app_state?key=eq.${key}&select=value`,{
