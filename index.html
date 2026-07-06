@@ -171,7 +171,7 @@ input[type=file]::file-selector-button{padding:4px 9px;border-radius:var(--r);bo
 </div>
 <main>
 <section id="tab-dashboard" class="pnl on">
-  <div class="sh"><h2>Overview</h2></div>
+  <div class="sh"><h2>Overview</h2><button class="bo" id="btn-copy-usage"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy today's usage</button></div>
   <div id="expiring-soon-section"></div>
   <div id="pool-section"></div>
   <div class="chart-wrap">
@@ -480,12 +480,56 @@ function renderExpiringSoon(){
   if(!alerts.length){el.innerHTML='';return;}
   alerts.sort((a,b)=>a.days-b.days);
   const rows=alerts.slice(0,5).map(a=>{
-    const cls=a.days<=7||a.isOver?'red':'';
+    const isRed=a.days<=7||a.isOver;
     const label=a.isOver?`Expired ${Math.abs(a.days)} day${Math.abs(a.days)===1?'':'s'} ago`:a.days===0?'Expires today':`${a.days} day${a.days===1?'':'s'} left`;
-    return `<div class="expiry-alert ${cls}" style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div><p class="f12 f5" style="margin-bottom:2px">${esc(a.clientName)}</p><p class="f11 m">${esc(a.ctName)} · ${fmt(a.allocated)} credits</p></div><span class="badge ${a.isOver||a.days<=7?'br':'ba'}" style="white-space:nowrap">${label}</span></div>`;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:.5px solid var(--bdr)"><div><p class="f12 f5" style="margin-bottom:2px">${esc(a.clientName)}</p><p class="f11 m">${esc(a.ctName)} · ${fmt(a.allocated)} credits</p></div><span class="badge ${isRed?'br':'ba'}" style="white-space:nowrap;flex-shrink:0">${label}</span></div>`;
   }).join('');
-  el.innerHTML=`<div style="margin-bottom:22px"><div class="fb" style="margin-bottom:10px"><h3 style="margin:0">&#9888; Expiring soon</h3>${alerts.length>5?`<span class="f11 m">${alerts.length} total</span>`:''}</div><div class="stk">${rows}</div></div>`;
+  el.innerHTML=`<div class="card" style="margin-bottom:22px"><div class="fb" style="margin-bottom:2px"><h3 style="margin:0">⚠ Expiring soon</h3>${alerts.length>5?`<span class="f11 m">+${alerts.length-5} more</span>`:''}</div><p class="f11 m" style="margin-bottom:10px">Credit batches expiring within 90 days</p><div>${rows}</div></div>`;
 }
+
+function copyTodaysUsage(){
+  const todayStr=new Date().toISOString().slice(0,10);
+  const displayDate=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const clientTotals={};
+  (S.usageLogs||[]).forEach(log=>{
+    const source=log.dateBreakdown||{[log.date.slice(0,10)]:log.credits||{}};
+    const dayData=source[todayStr];
+    if(!dayData)return;
+    Object.entries(dayData).forEach(([clientName,types])=>{
+      if(!clientTotals[clientName])clientTotals[clientName]={};
+      Object.entries(types).forEach(([ctName,n])=>{clientTotals[clientName][ctName]=(clientTotals[clientName][ctName]||0)+n;});
+    });
+  });
+  const clientNames=Object.keys(clientTotals).sort();
+  if(!clientNames.length){toast("No usage data recorded for today",'info');return;}
+  const grandTotal=Object.values(clientTotals).reduce((s,types)=>s+Object.values(types).reduce((ss,n)=>ss+n,0),0);
+  const lines=[];
+  lines.push(`📊 **Daily Credit Usage — ${displayDate}**`);
+  lines.push('');
+  lines.push(`🔢 **Total credits used today: ${grandTotal.toLocaleString()}**`);
+  lines.push('');
+  lines.push('──────────────────────────────');
+  lines.push('');
+  clientNames.forEach(clientName=>{
+    const types=clientTotals[clientName];
+    const clientTotal=Object.values(types).reduce((s,n)=>s+n,0);
+    lines.push(`🏢 **${clientName}** — ${clientTotal.toLocaleString()} credits`);
+    Object.entries(types).sort((a,b)=>b[1]-a[1]).forEach(([ctName,n])=>{lines.push(`   • ${ctName}: ${n.toLocaleString()}`);});
+    lines.push('');
+  });
+  lines.push('──────────────────────────────');
+  lines.push('📅 AccuReach Credits portal');
+  const text=lines.join('\n');
+  navigator.clipboard.writeText(text).then(()=>{
+    toast("Today's usage copied — paste into Teams!");
+    const btn=document.getElementById('btn-copy-usage');
+    const orig=btn.innerHTML;
+    btn.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="20 6 9 17 4 12"/></svg> Copied!';
+    btn.style.color='var(--grn-t)';btn.style.borderColor='var(--grn-b)';
+    setTimeout(()=>{btn.innerHTML=orig;btn.style.color='';btn.style.borderColor='';},2500);
+  }).catch(()=>toast('Could not copy — check clipboard permissions','er'));
+}
+document.getElementById('btn-copy-usage').addEventListener('click',copyTodaysUsage);
 // SendGrid
 async function sendEmail(toEmails,subject,htmlBody){
   const cfg=S.settings;
