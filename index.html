@@ -278,8 +278,8 @@ input[type=file]::file-selector-button{padding:4px 9px;border-radius:var(--r);bo
 <script>
 // ── Supabase configuration ──
 // Replace these two values with your own from supabase.com → Project Settings → API
-const SUPABASE_URL = 'https://plrasdlaknijhtxhbdua.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBscmFzZGxha25pamh0eGhiZHVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMzMTM4MjYsImV4cCI6MjA5ODg4OTgyNn0.9qBhOCS2F0wrVDIw5cNf6HRiUBIj1atnmVpWUnVNQsM';
+const SUPABASE_URL = 'https://YOUR_PROJECT_REF.supabase.co';
+const SUPABASE_ANON_KEY = 'YOUR_ANON_PUBLIC_KEY';
 const SKEY='accureach_prod';
 
 // Supabase REST helpers (no SDK needed — plain fetch)
@@ -421,9 +421,13 @@ async function sendEmail(toEmails,subject,htmlBody){
   const cfg=S.settings;
   if(!cfg.sgApiKey||!cfg.sgFromEmail)throw new Error('SendGrid not configured — add your API key and from address in Notifications.');
   if(!toEmails||!toEmails.length)throw new Error('No recipients.');
-  const payload={personalizations:[{to:toEmails.map(e=>({email:e}))}],from:{email:cfg.sgFromEmail,name:cfg.sgFromName||'AccuReach Credits'},subject,content:[{type:'text/html',value:htmlBody}]};
-  const resp=await fetch('https://api.sendgrid.com/v3/mail/send',{method:'POST',headers:{'Authorization':'Bearer '+cfg.sgApiKey,'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  if(!resp.ok){const err=await resp.text().catch(()=>'Unknown error');throw new Error('SendGrid '+resp.status+': '+err);}
+  const resp=await fetch(`${SUPABASE_URL}/functions/v1/send-email`,{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON_KEY},
+    body:JSON.stringify({to:toEmails,subject,html:htmlBody,apiKey:cfg.sgApiKey,fromEmail:cfg.sgFromEmail,fromName:cfg.sgFromName||'AccuReach Credits'})
+  });
+  const data=await resp.json().catch(()=>({}));
+  if(!data.ok)throw new Error('SendGrid '+data.status+': '+(data.body||data.error||'Unknown error'));
   return true;
 }
 
