@@ -504,16 +504,16 @@ function copyTodaysUsage(){
   if(!clientNames.length){toast("No usage data recorded for today",'info');return;}
   const grandTotal=Object.values(clientTotals).reduce((s,types)=>s+Object.values(types).reduce((ss,n)=>ss+n,0),0);
   const lines=[];
-  lines.push(`📊 **Daily Credit Usage — ${displayDate}**`);
+  lines.push(`📊 Daily Credit Usage — ${displayDate}`);
   lines.push('');
-  lines.push(`🔢 **Total credits used today: ${grandTotal.toLocaleString()}**`);
+  lines.push(`🔢 Total credits used today: ${grandTotal.toLocaleString()}`);
   lines.push('');
   lines.push('──────────────────────────────');
   lines.push('');
   clientNames.forEach(clientName=>{
     const types=clientTotals[clientName];
     const clientTotal=Object.values(types).reduce((s,n)=>s+n,0);
-    lines.push(`🏢 **${clientName}** — ${clientTotal.toLocaleString()} credits`);
+    lines.push(`🏢 ${clientName} — ${clientTotal.toLocaleString()} credits`);
     Object.entries(types).sort((a,b)=>b[1]-a[1]).forEach(([ctName,n])=>{lines.push(`   • ${ctName}: ${n.toLocaleString()}`);});
     lines.push('');
   });
