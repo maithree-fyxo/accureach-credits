@@ -109,7 +109,14 @@ input[type=file]::file-selector-button{padding:4px 9px;border-radius:var(--r);bo
 .notif-row{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:start;padding:8px 0;border-bottom:.5px solid var(--bdr);font-size:12px}
 .notif-row:last-child{border-bottom:none}
 .notif-dot{width:8px;height:8px;border-radius:50%;margin-top:4px;flex-shrink:0}
-.notif-dot.sent{background:var(--pri)}.notif-dot.fail{background:var(--red-t)}.notif-dot.skipped{background:var(--txt3)}
+.notif-dot.sent{background:var(--pri)}.notif-dot.fail{background:var(--red-t)}
+.toast-wrap{position:fixed;bottom:24px;right:24px;z-index:300;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.toast{background:var(--surf);border:.5px solid var(--bdr);border-left:3px solid var(--pri);border-radius:0 var(--r) var(--r) 0;padding:11px 14px;display:flex;align-items:flex-start;gap:10px;pointer-events:auto;animation:toastIn .18s ease;max-width:300px;box-shadow:0 2px 16px rgba(132,2,67,.08)}
+.toast.er{border-left-color:var(--red-t)}.toast.info{border-left-color:var(--blu-t)}
+.toast-icon{width:18px;height:18px;border-radius:5px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px;font-weight:700;margin-top:1px}
+.toast.ok .toast-icon{background:var(--pri-bg);color:var(--pri)}.toast.er .toast-icon{background:var(--red-bg);color:var(--red-t)}.toast.info .toast-icon{background:var(--blu-bg);color:var(--blu-t)}
+.toast-body{flex:1;min-width:0}.toast-title{font-size:12px;font-weight:500;color:var(--txt);line-height:1.3}.toast-sub{font-size:11px;color:var(--txt2);line-height:1.4;margin-top:2px}
+@keyframes toastIn{from{opacity:0;transform:translateX(8px)}to{opacity:1;transform:translateX(0)}}.notif-dot.skipped{background:var(--txt3)}
 @media(max-width:660px){.chart-filters{grid-template-columns:1fr 1fr}.g2{grid-template-columns:1fr}.batch-row{grid-template-columns:1fr 1fr auto}.contact-row{grid-template-columns:1fr auto}nav{gap:0}.tb{padding:10px 8px 8px;font-size:11px}}
 </style>
 </head>
@@ -369,7 +376,15 @@ let S={creditTypes:[],clients:[],usageLogs:[],auditLogs:[],notifLogs:[],settings
 let editingPool={},lastKnownJSON='',pendingRemoteData=null,adminEmailRows=[],expandedClients=new Set();
 
 // ── Toast notifications ──
-function toast(msg,type='ok',duration=3000){const wrap=document.getElementById('toast-wrap');const t=document.createElement('div');t.className='toast '+type;const icon=type==='ok'?'✓':type==='er'?'✕':'ℹ';t.innerHTML=`<span style="font-weight:600;flex-shrink:0">${icon}</span><span>${msg}</span>`;wrap.appendChild(t);setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(8px)';t.style.transition='all .2s';setTimeout(()=>t.remove(),200);},duration);}
+function toast(msg,type='ok',duration=3200,sub=''){
+  const wrap=document.getElementById('toast-wrap');
+  const t=document.createElement('div');
+  t.className='toast '+type;
+  const icons={ok:'✓',er:'✕',info:'i'};
+  t.innerHTML=`<div class="toast-icon">${icons[type]||'i'}</div><div class="toast-body"><div class="toast-title">${msg}</div>${sub?`<div class="toast-sub">${sub}</div>`:''}</div>`;
+  wrap.appendChild(t);
+  setTimeout(()=>{t.style.opacity='0';t.style.transform='translateX(8px)';t.style.transition='all .18s ease';setTimeout(()=>t.remove(),180);},duration);
+}
 
 // ── Confirm delete modal ──
 let confirmResolve=null;
@@ -434,13 +449,13 @@ document.getElementById('btn-gen-backup').addEventListener('click',()=>{document
 document.getElementById('btn-copy-backup').addEventListener('click',()=>{
   const text=document.getElementById('backup-text').textContent;if(!text||text.startsWith('Click'))return;
   const btn=document.getElementById('btn-copy-backup');
-  try{navigator.clipboard.writeText(text).then(()=>{btn.textContent='Copied!';setTimeout(()=>{btn.textContent='Copy to clipboard';},2000);});}
+  try{navigator.clipboard.writeText(text).then(()=>{btn.textContent='Copied!';toast('Backup copied','ok',3200,'Paste somewhere safe to store it');setTimeout(()=>{btn.textContent='Copy to clipboard';},2000);});}
   catch(e){const el=document.getElementById('backup-text');const range=document.createRange();range.selectNodeContents(el);window.getSelection().removeAllRanges();window.getSelection().addRange(range);}
 });
 document.getElementById('btn-do-import').addEventListener('click',async()=>{
   const text=document.getElementById('import-text').value.trim();const msgEl=document.getElementById('import-msg');
   if(!text){msgEl.innerHTML='<div class="alrt er">Please paste your backup JSON first.</div>';return;}
-  try{const parsed=JSON.parse(text);if(!parsed.clients&&!parsed.creditTypes)throw new Error('Invalid');S=mergeState(parsed);await saveShared();renderAll();msgEl.innerHTML='<div class="alrt ok">✓ Restored.</div>';}
+  try{const parsed=JSON.parse(text);if(!parsed.clients&&!parsed.creditTypes)throw new Error('Invalid');S=mergeState(parsed);await saveShared();renderAll();msgEl.innerHTML='<div class="alrt ok">✓ Restored.</div>';toast('Data restored','ok',3200,'All data loaded from backup');}
   catch(e){msgEl.innerHTML='<div class="alrt er">Invalid backup JSON.</div>';}
 });
 
@@ -504,7 +519,7 @@ function copyTodaysUsage(){
     });
   });
   const clientNames=Object.keys(clientTotals).sort();
-  if(!clientNames.length){toast("No usage data recorded for today",'info');return;}
+  if(!clientNames.length){toast('No usage today','info',3200,'No data recorded for today yet');return;}
   const grandTotal=Object.values(clientTotals).reduce((s,types)=>s+Object.values(types).reduce((ss,n)=>ss+n,0),0);
   const lines=[];
   lines.push(`📊 Daily Credit Usage — ${displayDate}`);
@@ -524,13 +539,13 @@ function copyTodaysUsage(){
   lines.push('📅 AccuReach Credits portal');
   const text=lines.join('\n');
   navigator.clipboard.writeText(text).then(()=>{
-    toast("Today's usage copied — paste into Teams!");
+    toast("Today's usage copied",'ok',3200,'Paste into Teams to share');
     const btn=document.getElementById('btn-copy-usage');
     const orig=btn.innerHTML;
     btn.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="20 6 9 17 4 12"/></svg> Copied!';
     btn.style.color='var(--grn-t)';btn.style.borderColor='var(--grn-b)';
     setTimeout(()=>{btn.innerHTML=orig;btn.style.color='';btn.style.borderColor='';},2500);
-  }).catch(()=>toast('Could not copy — check clipboard permissions','er'));
+  }).catch(()=>toast('Could not copy','er',3200,'Check clipboard permissions'));
 }
 document.getElementById('btn-copy-usage').addEventListener('click',copyTodaysUsage);
 // SendGrid
@@ -750,7 +765,7 @@ async function runNotificationCheck(showFeedback=true){
   }
 
   if(saveNeeded){S.notifLogs=[...newLogs,...(S.notifLogs||[])].slice(0,200);await saveShared();renderNotifLog();}
-  if(showFeedback){const btn=document.getElementById('btn-run-notif-check');const orig=btn.innerHTML;btn.innerHTML=ICcheck+' Done';setTimeout(()=>{btn.innerHTML=orig;},3000);}
+  if(showFeedback){toast('Check complete','ok',3200,'All triggers reviewed');const btn=document.getElementById('btn-run-notif-check');const orig=btn.innerHTML;btn.innerHTML=ICcheck+' Done';setTimeout(()=>{btn.innerHTML=orig;},3000);}
 }
 
 document.getElementById('btn-run-notif-check').addEventListener('click',()=>runNotificationCheck(true));
@@ -791,13 +806,14 @@ document.getElementById('btn-save-sg').addEventListener('click',async()=>{
   S.settings.sgFromEmail=document.getElementById('sg-from-email').value.trim();
   S.settings.sgFromName=document.getElementById('sg-from-name').value.trim()||'AccuReach Credits';
   await saveShared();
+  toast('Configuration saved','ok',3200,'SendGrid settings updated');
   const msg=document.getElementById('sg-msg');msg.innerHTML='<div class="alrt ok">'+ICcheck+' SendGrid configuration saved.</div>';setTimeout(()=>{msg.innerHTML='';},3000);
 });
 document.getElementById('btn-test-sg').addEventListener('click',async()=>{
   const msg=document.getElementById('sg-msg'),email=document.getElementById('sg-from-email').value.trim();
   if(!document.getElementById('sg-api-key').value.trim()||!email){msg.innerHTML='<div class="alrt er">Save your SendGrid configuration first.</div>';return;}
   msg.innerHTML='<div class="alrt info">Sending test email...</div>';
-  try{await sendEmail([email],'[AccuReach] Test notification',emailTemplate('Test Email',['This is a test notification from AccuReach Credits portal.','If you received this, your SendGrid configuration is working correctly.']));msg.innerHTML='<div class="alrt ok">'+ICcheck+' Test email sent to '+esc(email)+'</div>';}
+  try{await sendEmail([email],'[AccuReach] Test notification',emailTemplate('Test Email',['This is a test notification from AccuReach Credits portal.','If you received this, your SendGrid configuration is working correctly.']));msg.innerHTML='<div class="alrt ok">'+ICcheck+' Test email sent to '+esc(email)+'</div>';toast('Test email sent','ok',3200,'Check your inbox');}
   catch(e){msg.innerHTML='<div class="alrt er">Failed: '+esc(e.message)+'</div>';}
 });
 document.getElementById('btn-add-admin-email').addEventListener('click',()=>{adminEmailRows.push({id:uid(),email:''});renderAdminEmailRows();});
@@ -805,7 +821,7 @@ document.getElementById('admin-email-rows').addEventListener('click',function(e)
 document.getElementById('admin-email-rows').addEventListener('input',function(e){const f=e.target.closest('[data-field="aemail"]');if(f){const r=adminEmailRows.find(x=>x.id===f.dataset.id);if(r)r.email=f.value;}});
 document.getElementById('btn-save-admin-emails').addEventListener('click',async()=>{
   S.settings.adminEmails=adminEmailRows.filter(r=>r.email).map(r=>({id:r.id,email:r.email}));
-  await saveShared();toast('Admin emails saved');document.getElementById('sg-msg').innerHTML='<div class="alrt ok">'+ICcheck+' Admin emails saved.</div>';setTimeout(()=>{document.getElementById('sg-msg').innerHTML='';},3000);
+  await saveShared();toast('Admin emails saved','ok',3200,'Notification recipients updated');document.getElementById('sg-msg').innerHTML='<div class="alrt ok">'+ICcheck+' Admin emails saved.</div>';setTimeout(()=>{document.getElementById('sg-msg').innerHTML='';},3000);
 });
 document.getElementById('btn-save-triggers').addEventListener('click',async()=>{
   document.getElementById('trigger-list').querySelectorAll('input[data-tkey]').forEach(inp=>{
@@ -813,9 +829,9 @@ document.getElementById('btn-save-triggers').addEventListener('click',async()=>{
     if(!S.settings.triggers[key])S.settings.triggers[key]={...DEFAULT_TRIGGERS[key]};
     S.settings.triggers[key][role]=inp.checked;
   });
-  await saveShared();
+  await saveShared();toast('Trigger settings saved','ok',3200,'Notification preferences updated');
 });
-document.getElementById('btn-save-threshold').addEventListener('click',async()=>{S.settings.dailyThreshold=Number(document.getElementById('daily-threshold').value)||1000;await saveShared();toast('Threshold saved');});
+document.getElementById('btn-save-threshold').addEventListener('click',async()=>{S.settings.dailyThreshold=Number(document.getElementById('daily-threshold').value)||1000;await saveShared();toast('Threshold saved','ok',3200,'Daily usage threshold updated');});
 
 document.querySelectorAll('.tb').forEach(b=>{
   b.addEventListener('click',()=>{
@@ -932,7 +948,7 @@ document.getElementById('pool-section').addEventListener('click',function(e){
     const before=(S.creditTypes.find(t=>t.id===id)||{}).poolTotal||0,after=Number(inp?.value)||0,ct=S.creditTypes.find(t=>t.id===id);
     S.creditTypes=S.creditTypes.map(t=>t.id===id?{...t,poolTotal:after}:t);
     S.auditLogs=[{id:uid(),type:'pool',date:now(),description:'Pool updated: '+(ct?.name||id),creditTypeName:ct?.name||'',before,after},...S.auditLogs].slice(0,500);
-    delete editingPool[id];saveShared();toast('Pool updated');renderDashboard();renderLogs();
+    delete editingPool[id];saveShared();toast('Pool updated','ok',3200,'Pool size saved');renderDashboard();renderLogs();
     if(S.settings.triggers?.new_allocation?.enabled)setTimeout(()=>runNotificationCheck(false),500);
   }
 });
@@ -944,7 +960,7 @@ document.getElementById('ct-list').addEventListener('click',async function(e){
     const ct=S.creditTypes.find(t=>t.id===db.dataset.id);
     const ok=await confirmDelete('Delete credit type?',`"${ct?.name||'This credit type'}" will be permanently removed.`);
     if(!ok)return;
-    S.creditTypes=S.creditTypes.filter(t=>t.id!==db.dataset.id);saveShared();toast('Credit type deleted');renderAll();
+    S.creditTypes=S.creditTypes.filter(t=>t.id!==db.dataset.id);saveShared();toast('Credit type deleted','ok',3200,'Credit type removed');renderAll();
   }
 });
 document.getElementById('btn-add-ct').addEventListener('click',()=>openCTForm(null));
@@ -955,7 +971,7 @@ document.getElementById('btn-save-ct').addEventListener('click',async()=>{
   const countReliant=document.getElementById('ctf-reliant').checked,id=document.getElementById('ctf-id').value;
   if(id){S.creditTypes=S.creditTypes.map(ct=>ct.id===id?{...ct,name,statusCodes:codes,countReliant}:ct);}
   else{S.creditTypes.push({id:uid(),name,statusCodes:codes,poolTotal:0,countReliant});}
-  await saveShared();document.getElementById('ct-form-wrap').classList.add('hid');toast('Credit type saved');renderAll();
+  await saveShared();document.getElementById('ct-form-wrap').classList.add('hid');toast('Credit type saved','ok',3200,'Changes saved');renderAll();
 });
 function openCTForm(ct){
   document.getElementById('ctf-name').value=ct?.name||'';document.getElementById('ctf-codes').value=(ct?.statusCodes||[]).join(', ');
@@ -1013,7 +1029,7 @@ document.getElementById('clients-list').addEventListener('click',async function(
     if(!ok)return;
     S.clients=S.clients.map(c=>c.id===cid?{...c,consignments:(c.consignments||[]).map(cs=>cs.creditTypeId===ctId?{...cs,used:0}:cs)}:c);
     S.auditLogs=[{id:uid(),type:'allocation',date:now(),clientId:cid,clientName:client?.name||'',creditTypeName:ct?.name||'',description:`Usage reset: ${client?.name} — ${ct?.name}`,before:null,after:0},...S.auditLogs].slice(0,500);
-    await saveShared();toast('Usage reset to 0');renderAll();return;
+    await saveShared();toast('Usage reset to 0','ok',3200,'Audit log entry created');renderAll();return;
   }
   if(eb){e.stopPropagation();const c=S.clients.find(x=>x.id===eb.dataset.id);if(c)openClientForm(c);return;}
   if(db){
@@ -1023,7 +1039,7 @@ document.getElementById('clients-list').addEventListener('click',async function(
     if(!ok)return;
     S.auditLogs=[{id:uid(),type:'allocation',date:now(),clientId:db.dataset.id,clientName:c?.name||'',description:'Client deleted: '+(c?.name||''),before:null,after:null},...S.auditLogs].slice(0,500);
     S.clients=S.clients.filter(x=>x.id!==db.dataset.id);expandedClients.delete(db.dataset.id);
-    saveShared();toast('Client deleted');renderAll();return;
+    saveShared();toast('Client deleted','ok',3200,'Client removed permanently');renderAll();return;
   }
   if(card){const cid=card.dataset.clientId;if(expandedClients.has(cid))expandedClients.delete(cid);else expandedClients.add(cid);renderClients();}
 
@@ -1049,7 +1065,7 @@ document.getElementById('btn-save-client').addEventListener('click',async()=>{
     S.clients.push({id:newId,name,hostIPs:ips,consignments,contacts});
   }
   S.auditLogs=[...audit,...S.auditLogs].slice(0,500);
-  await saveShared();document.getElementById('client-form-wrap').classList.add('hid');toast(editId?'Client updated':'Client added');renderAll();
+  await saveShared();document.getElementById('client-form-wrap').classList.add('hid');toast(editId?'Client updated':'Client added','ok',3200,'Changes saved');renderAll();
   if(audit.length&&S.settings.triggers?.new_allocation?.enabled)setTimeout(()=>runNotificationCheck(false),500);
 });
 function openClientForm(c){
