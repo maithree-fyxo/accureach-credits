@@ -1133,21 +1133,38 @@ document.getElementById('client-search')?.addEventListener('input',()=>renderCli
 document.getElementById('client-sort')?.addEventListener('change',()=>renderClients());
 
 let parsedCSV=null;
+// ── Simple fast checksum (djb2 over file content) ──
+function csvChecksum(str){
+  let h=5381;
+  for(let i=0;i<str.length;i++)h=((h<<5)+h)^str.charCodeAt(i);
+  return (h>>>0).toString(16).padStart(8,'0');
+}
+
 document.getElementById('csv-file').addEventListener('change',function(){
   const file=this.files[0];if(!file)return;
   document.getElementById('upload-msg').innerHTML='';document.getElementById('csv-config').classList.add('hid');
   const reader=new FileReader();
   reader.onload=ev=>{
-    const lines=ev.target.result.trim().split(/\r?\n/);if(lines.length<2){showMsg('er','Could not parse CSV.');return;}
+    const raw=ev.target.result;
+    const checksum=csvChecksum(raw);
+    const lines=raw.trim().split(/\r?\n/);if(lines.length<2){showMsg('er','Could not parse CSV.');return;}
     const headers=lines[0].split(',').map(h=>h.trim().replace(/^"|"$/g,''));
     const rows=lines.slice(1).map(l=>{const v=[];let cur='',inQ=false;for(let i=0;i<l.length;i++){const ch=l[i];if(ch==='"'){inQ=!inQ;}else if(ch===','&&!inQ){v.push(cur.trim());cur='';}else{cur+=ch;}}v.push(cur.trim());const o={};headers.forEach((h,i)=>o[h]=(v[i]||'').replace(/^"|"$/g,''));return o;});
-    parsedCSV={headers,rows};
+    // Check for duplicate upload
+    const prev=(S.usageLogs||[]).find(l=>l.checksum===checksum);
+    if(prev){
+      const prevDate=new Date(prev.date).toLocaleString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+      showMsg('er',`⚠ This file has already been uploaded on <strong>${prevDate}</strong>. Processing it again would double-count all usage. If you need to re-upload, remove the original upload from logs first.`);
+      document.getElementById('csv-file').value='';
+      return;
+    }
+    parsedCSV={headers,rows,checksum};
     const ipG=headers.find(h=>/ip|host/i.test(h))||'',stG=headers.find(h=>/status.*code|response.*code/i.test(h))||headers.find(h=>/status/i.test(h))||'';
     const mkO=g=>headers.map(h=>'<option value="'+esc(h)+'"'+(h===g?' selected':'')+'>'+esc(h)+'</option>').join('');
     document.getElementById('col-ip').innerHTML='<option value="">— select —</option>'+mkO(ipG);
     document.getElementById('col-status').innerHTML='<option value="">— select —</option>'+mkO(stG);
-    const prev=rows.slice(0,5).map(r=>'<tr>'+headers.slice(0,8).map(h=>'<td style="padding:4px 8px;border-bottom:.5px solid var(--bdr);color:var(--txt2);font-size:11px;font-family:monospace;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r[h]||'')+'</td>').join('')+'</tr>').join('');
-    document.getElementById('csv-preview').innerHTML='<p class="f12 m mb8">Preview (first 5 rows)</p><table style="min-width:100%;border-collapse:collapse"><thead><tr>'+headers.slice(0,8).map(h=>'<th style="padding:5px 8px;text-align:left;background:var(--surf2);border-bottom:.5px solid var(--bdr);white-space:nowrap;font-size:11px">'+esc(h)+'</th>').join('')+'</tr></thead><tbody>'+prev+'</tbody></table>';
+    const prevRows=rows.slice(0,5).map(r=>'<tr>'+headers.slice(0,8).map(h=>'<td style="padding:4px 8px;border-bottom:.5px solid var(--bdr);color:var(--txt2);font-size:11px;font-family:monospace;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r[h]||'')+'</td>').join('')+'</tr>').join('');
+    document.getElementById('csv-preview').innerHTML='<p class="f12 m mb8">Preview (first 5 rows)</p><table style="min-width:100%;border-collapse:collapse"><thead><tr>'+headers.slice(0,8).map(h=>'<th style="padding:5px 8px;text-align:left;background:var(--surf2);border-bottom:.5px solid var(--bdr);white-space:nowrap;font-size:11px">'+esc(h)+'</th>').join('')+'</tr></thead><tbody>'+prevRows+'</tbody></table>';
     document.getElementById('btn-process').textContent='Process '+rows.length.toLocaleString()+' rows';document.getElementById('csv-config').classList.remove('hid');
   };reader.readAsText(file);
 });
@@ -1192,7 +1209,7 @@ document.getElementById('btn-process').addEventListener('click',async()=>{
     Object.entries(types).forEach(([ct,n])=>{S.unmatchedIPUsage[ip][ct]=(S.unmatchedIPUsage[ip][ct]||0)+n;});
   });
   const unmatchedIPs=Object.keys(unmatchedUsage);
-  const log={id:uid(),type:'upload',date:now(),rows:parsedCSV.rows.length,credits:logC,unmatched:unmatchedIPs,dateBreakdown:dateCredits};
+  const log={id:uid(),type:'upload',date:now(),rows:parsedCSV.rows.length,credits:logC,unmatched:unmatchedIPs,dateBreakdown:dateCredits,checksum:parsedCSV.checksum||null};
   S.usageLogs=[log,...S.usageLogs].slice(0,100);await saveShared();
   const totalBurned=Object.values(logC).reduce((s,types)=>s+Object.values(types).reduce((ss,n)=>ss+n,0),0);
   const burned=Object.entries(logC).map(([cn,ts])=>'<p style="margin:0 0 2px;font-size:12px;font-weight:500;color:var(--pri-t)">'+esc(cn)+'</p>'+Object.entries(ts).map(([tn,n])=>'<p style="margin:0 0 1px;font-size:11px;color:var(--pri-t);padding-left:10px">'+esc(tn)+': +'+n.toLocaleString()+'</p>').join('')).join('');
