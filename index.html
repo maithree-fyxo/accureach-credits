@@ -270,6 +270,7 @@ input[type=file]::file-selector-button{padding:4px 9px;border-radius:var(--r);bo
     </div>
   </div>
   <div id="upload-msg"></div>
+  <div id="unrecognised-section"></div>
 </section>
 <section id="tab-notifications" class="pnl">
   <div class="sh"><h2>Notifications</h2><button class="bp" id="btn-run-notif-check"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Run check now</button></div>
@@ -368,11 +369,12 @@ function mergeState(inc){
     usageLogs:inc.usageLogs??[],
     auditLogs:inc.auditLogs??[],
     notifLogs:inc.notifLogs??[],
+    unmatchedIPUsage:inc.unmatchedIPUsage??{},
     settings:Object.assign({sgApiKey:'',sgFromEmail:'',sgFromName:'AccuReach Credits',adminEmails:[],triggers:{...DEFAULT_TRIGGERS},dailyThreshold:1000,sentNotifKeys:{}},inc.settings||{})
   };
 }
 
-let S={creditTypes:[],clients:[],usageLogs:[],auditLogs:[],notifLogs:[],settings:{sgApiKey:'',sgFromEmail:'',sgFromName:'AccuReach Credits',adminEmails:[],triggers:{...DEFAULT_TRIGGERS},dailyThreshold:1000,sentNotifKeys:{}}};
+let S={creditTypes:[],clients:[],usageLogs:[],auditLogs:[],notifLogs:[],unmatchedIPUsage:{},settings:{sgApiKey:'',sgFromEmail:'',sgFromName:'AccuReach Credits',adminEmails:[],triggers:{...DEFAULT_TRIGGERS},dailyThreshold:1000,sentNotifKeys:{}}};
 let editingPool={},lastKnownJSON='',pendingRemoteData=null,adminEmailRows=[],expandedClients=new Set();
 
 // ── Toast notifications ──
@@ -840,6 +842,7 @@ document.querySelectorAll('.tb').forEach(b=>{
     b.classList.add('on');document.getElementById('tab-'+b.dataset.tab).classList.add('on');
     editingPool={};
     if(b.dataset.tab==='notifications')renderNotificationsTab();
+    else if(b.dataset.tab==='upload'){renderAll();renderUnrecognisedIPs();}
     else renderAll();
   });
 });
@@ -1129,14 +1132,28 @@ document.getElementById('btn-process').addEventListener('click',async()=>{
   if(!ipCol||!stCol){showMsg('er','Please select both columns.');return;}
   const ipMap={};S.clients.forEach(c=>(c.hostIPs||[]).forEach(ip=>{ipMap[ip.trim()]=c.id;}));
   const ctByPath={};S.creditTypes.forEach(ct=>{ctByPath[ct.name.trim().toLowerCase()]=ct;});
-  const delta={},logC={},dateCredits={};const unmatched=new Set();
+  const delta={},logC={},dateCredits={},unmatchedUsage={};
   parsedCSV.rows.forEach(row=>{
     const ip=(row[ipCol]||'').trim(),status=(row[stCol]||'').trim(),requestPath=(row['request_path']||row['request-path']||row['path']||'').trim();
     const tsRaw=row['@timestamp']||row['timestamp']||row['date']||'';
     let dateStr=new Date().toISOString().slice(0,10);
-    if(tsRaw){const tsClean=tsRaw.replace(/(\.\d{3})\d+/,'$1');const d=new Date(tsClean);if(!isNaN(d))dateStr=d.toISOString().slice(0,10);}
+    if(tsRaw){const tsClean=tsRaw.replace(/(\.[0-9]{3})[0-9]+/,'$1');const d=new Date(tsClean);if(!isNaN(d))dateStr=d.toISOString().slice(0,10);}
     const cid=ipMap[ip];
-    if(!cid){if(ip&&!ip.startsWith('pdl_')&&!ip.startsWith('profile='))unmatched.add(ip);return;}
+    if(!cid){
+      if(ip&&!ip.startsWith('pdl_')&&!ip.startsWith('profile=')){
+        const ct=requestPath?ctByPath[requestPath.toLowerCase()]:null;
+        if(ct&&(ct.statusCodes||[]).includes(status)){
+          let burn=1;if(ct.countReliant){const n=parseInt(row['num_200']||row['num200']||'1',10);burn=(isNaN(n)||n<1)?1:n;}
+          if(!unmatchedUsage[ip])unmatchedUsage[ip]={};
+          unmatchedUsage[ip][ct.name]=(unmatchedUsage[ip][ct.name]||0)+burn;
+        } else {
+          if(!unmatchedUsage[ip])unmatchedUsage[ip]={};
+          const key=ct?ct.name:'(unknown credit type)';
+          unmatchedUsage[ip][key]=(unmatchedUsage[ip][key]||0)+1;
+        }
+      }
+      return;
+    }
     const client=S.clients.find(c=>c.id===cid);if(!client)return;
     const ct=requestPath?ctByPath[requestPath.toLowerCase()]:null;if(!ct)return;
     if(!(ct.statusCodes||[]).includes(status))return;
@@ -1146,14 +1163,140 @@ document.getElementById('btn-process').addEventListener('click',async()=>{
     if(!dateCredits[dateStr])dateCredits[dateStr]={};if(!dateCredits[dateStr][client.name])dateCredits[dateStr][client.name]={};dateCredits[dateStr][client.name][ct.name]=(dateCredits[dateStr][client.name][ct.name]||0)+burn;
   });
   S.clients=S.clients.map(c=>{const d=delta[c.id];if(!d)return c;return{...c,consignments:(c.consignments||[]).map(cs=>{const add=d[cs.creditTypeId]||0;return add?{...cs,used:(cs.used||0)+add}:cs;})};});
-  const log={id:uid(),type:'upload',date:now(),rows:parsedCSV.rows.length,credits:logC,unmatched:[...unmatched],dateBreakdown:dateCredits};
+  Object.entries(unmatchedUsage).forEach(([ip,types])=>{
+    if(!S.unmatchedIPUsage[ip])S.unmatchedIPUsage[ip]={};
+    Object.entries(types).forEach(([ct,n])=>{S.unmatchedIPUsage[ip][ct]=(S.unmatchedIPUsage[ip][ct]||0)+n;});
+  });
+  const unmatchedIPs=Object.keys(unmatchedUsage);
+  const log={id:uid(),type:'upload',date:now(),rows:parsedCSV.rows.length,credits:logC,unmatched:unmatchedIPs,dateBreakdown:dateCredits};
   S.usageLogs=[log,...S.usageLogs].slice(0,100);await saveShared();
-  const burned=Object.entries(logC).map(([cn,ts])=>'<p style="margin:0 0 2px;font-size:12px;font-weight:500;color:var(--grn-t)">'+esc(cn)+'</p>'+Object.entries(ts).map(([tn,n])=>'<p style="margin:0 0 1px;font-size:11px;color:var(--grn-t);padding-left:10px">'+esc(tn)+': +'+n.toLocaleString()+'</p>').join('')).join('');
-  const wt=unmatched.size?'<p style="font-size:11px;color:var(--amb-t);margin-top:6px">⚠ '+unmatched.size+' unrecognised IPs</p>':'';
+  const totalBurned=Object.values(logC).reduce((s,types)=>s+Object.values(types).reduce((ss,n)=>ss+n,0),0);
+  const burned=Object.entries(logC).map(([cn,ts])=>'<p style="margin:0 0 2px;font-size:12px;font-weight:500;color:var(--pri-t)">'+esc(cn)+'</p>'+Object.entries(ts).map(([tn,n])=>'<p style="margin:0 0 1px;font-size:11px;color:var(--pri-t);padding-left:10px">'+esc(tn)+': +'+n.toLocaleString()+'</p>').join('')).join('');
+  const wt=unmatchedIPs.length?`<p style="font-size:11px;color:var(--amb-t);margin-top:6px">⚠ ${unmatchedIPs.length} unrecognised IP${unmatchedIPs.length===1?'':'s'} tracked below</p>`:'';
   showMsg('ok',ICcheck+' Processed — '+parsedCSV.rows.length.toLocaleString()+' rows'+(burned?'<div style="margin-top:7px">'+burned+'</div>':'')+wt);
-  document.getElementById('csv-config').classList.add('hid');document.getElementById('csv-file').value='';parsedCSV=null;renderAll();
+  if(unmatchedIPs.length)toast(unmatchedIPs.length+' unrecognised IP'+(unmatchedIPs.length===1?'':'s')+' found','info',4000,'Assign them below to track usage');
+  else toast(totalBurned.toLocaleString()+' credits burned','ok',3200,Object.keys(logC).length+' client(s) updated');
+  document.getElementById('csv-config').classList.add('hid');document.getElementById('csv-file').value='';parsedCSV=null;
+  renderAll();renderUnrecognisedIPs();
   setTimeout(()=>runNotificationCheck(false),800);
 });
+function renderUnrecognisedIPs(){
+  const el=document.getElementById('unrecognised-section');
+  if(!el)return;
+  const ips=Object.entries(S.unmatchedIPUsage||{});
+  if(!ips.length){el.innerHTML='';return;}
+
+  const totalCredits=ips.reduce((s,[,types])=>s+Object.values(types).reduce((ss,n)=>ss+n,0),0);
+
+  const rows=ips.map(([ip,types])=>{
+    const ipTotal=Object.values(types).reduce((s,n)=>s+n,0);
+    const breakdown=Object.entries(types).map(([ct,n])=>`<span class="badge ba" style="font-size:10px">${esc(ct)}: ${n.toLocaleString()}</span>`).join(' ');
+    const clientOpts=S.clients.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
+    return `<div class="card" style="margin-bottom:8px">
+      <div class="fb mb8">
+        <div>
+          <div class="fc g6 mb8">
+            <span class="f12 f5 mn">${esc(ip)}</span>
+            <span class="badge ba">${ipTotal.toLocaleString()} credits</span>
+          </div>
+          <div class="fw g6">${breakdown}</div>
+        </div>
+        <button class="bi dl" data-action="dismiss-ip" data-ip="${esc(ip)}" title="Dismiss this IP">✕</button>
+      </div>
+      <div class="fc g6" style="flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:.5px solid var(--bdr)">
+        <select data-ip-assign="${esc(ip)}" style="flex:1;min-width:160px;font-size:12px">
+          <option value="">— assign to existing client —</option>
+          ${clientOpts}
+        </select>
+        <button class="bp" data-action="assign-ip" data-ip="${esc(ip)}" style="font-size:11px;padding:5px 11px">Assign</button>
+        <span class="f11 m">or</span>
+        <button class="bo" data-action="add-client-ip" data-ip="${esc(ip)}" style="font-size:11px">Add as new client</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  el.innerHTML=`<div class="card" style="margin-bottom:22px;border-color:var(--amb-t)">
+    <div class="fb mb10">
+      <div>
+        <h3 style="margin:0 0 2px">⚠ Unrecognised IPs</h3>
+        <p class="f11 m">${ips.length} IP${ips.length===1?'':'s'} · ${totalCredits.toLocaleString()} credits untracked — assign to a client to include in usage</p>
+      </div>
+      <button class="bo sm" data-action="dismiss-all-ips">Dismiss all</button>
+    </div>
+    <div>${rows}</div>
+  </div>`;
+}
+
+// Handle unrecognised IP actions
+document.getElementById('unrecognised-section').addEventListener('click',async function(e){
+  const assignBtn=e.target.closest('[data-action="assign-ip"]');
+  const addBtn=e.target.closest('[data-action="add-client-ip"]');
+  const dismissBtn=e.target.closest('[data-action="dismiss-ip"]');
+  const dismissAllBtn=e.target.closest('[data-action="dismiss-all-ips"]');
+
+  if(dismissBtn){
+    const ip=dismissBtn.dataset.ip;
+    const ok=await confirmDelete('Dismiss IP?',`${ip} will be removed from the unrecognised list. Usage data will be discarded.`);
+    if(!ok)return;
+    delete S.unmatchedIPUsage[ip];
+    await saveShared();toast('IP dismissed','ok',3200,'Removed from unrecognised list');
+    renderUnrecognisedIPs();return;
+  }
+
+  if(dismissAllBtn){
+    const ok=await confirmDelete('Dismiss all unrecognised IPs?','All unrecognised IP usage data will be discarded.');
+    if(!ok)return;
+    S.unmatchedIPUsage={};
+    await saveShared();toast('All IPs dismissed','ok',3200,'Unrecognised list cleared');
+    renderUnrecognisedIPs();return;
+  }
+
+  if(assignBtn){
+    const ip=assignBtn.dataset.ip;
+    const sel=document.querySelector(`[data-ip-assign="${ip}"]`);
+    const clientId=sel?.value;
+    if(!clientId){toast('Select a client first','er',3000,'');return;}
+    const client=S.clients.find(c=>c.id===clientId);
+    if(!client){return;}
+    // Add IP to client's hostIPs if not already there
+    if(!(client.hostIPs||[]).includes(ip)){
+      S.clients=S.clients.map(c=>c.id===clientId?{...c,hostIPs:[...(c.hostIPs||[]),ip]}:c);
+    }
+    // Remove from unrecognised
+    delete S.unmatchedIPUsage[ip];
+    S.auditLogs=[{id:uid(),type:'allocation',date:now(),clientId,clientName:client.name,description:`IP ${ip} assigned to ${client.name}`,before:null,after:null},...S.auditLogs].slice(0,500);
+    await saveShared();
+    toast(`${ip} assigned to ${client.name}`,'ok',3200,'IP added to client — future uploads will match');
+    renderAll();renderUnrecognisedIPs();return;
+  }
+
+  if(addBtn){
+    const ip=addBtn.dataset.ip;
+    // Pre-fill the client form with this IP and switch to clients tab
+    document.querySelectorAll('.tb').forEach(x=>x.classList.remove('on'));
+    document.querySelectorAll('.pnl').forEach(x=>x.classList.remove('on'));
+    document.querySelector('.tb[data-tab="clients"]').classList.add('on');
+    document.getElementById('tab-clients').classList.add('on');
+    openClientForm(null);
+    document.getElementById('cf-ips').value=ip;
+    // Store the IP so we can clear it from unrecognised after save
+    document.getElementById('cf-id').dataset.pendingIp=ip;
+    toast('Client form pre-filled','info',3200,`Set the name, then save to assign ${ip}`);return;
+  }
+});
+
+// After saving a client, if it came from an unrecognised IP, clear it
+const origSaveClient=document.getElementById('btn-save-client');
+origSaveClient.addEventListener('click',async function afterSaveForIP(){
+  const pendingIp=document.getElementById('cf-id').dataset.pendingIp;
+  if(pendingIp&&S.unmatchedIPUsage[pendingIp]){
+    delete S.unmatchedIPUsage[pendingIp];
+    document.getElementById('cf-id').dataset.pendingIp='';
+    await saveShared();
+    renderUnrecognisedIPs();
+  }
+},{capture:false});
+
 function showMsg(type,html){const el=document.getElementById('upload-msg');el.className='alrt '+type;el.innerHTML=html;}
 
 document.querySelectorAll('.sb').forEach(b=>{b.addEventListener('click',()=>{document.querySelectorAll('.sb').forEach(x=>x.classList.remove('on'));b.classList.add('on');const isU=b.dataset.log==='usage';document.getElementById('log-usage').classList.toggle('hid',!isU);document.getElementById('log-audit').classList.toggle('hid',isU);});});
