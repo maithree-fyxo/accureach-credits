@@ -1053,6 +1053,7 @@ document.getElementById('btn-save-client').addEventListener('click',async()=>{
   const name=document.getElementById('cf-name').value.trim();if(!name)return;
   const ips=document.getElementById('cf-ips').value.split(/[\n,]+/).map(s=>s.trim()).filter(Boolean);
   const editId=document.getElementById('cf-id').value;
+  const pendingIp=document.getElementById('cf-id').dataset.pendingIp||'';
   const csMap={};
   batchRows.filter(b=>b.creditTypeId).forEach(b=>{if(!csMap[b.creditTypeId])csMap[b.creditTypeId]={creditTypeId:b.creditTypeId,used:0,batches:[]};csMap[b.creditTypeId].batches.push({id:b.id,allocated:Number(b.allocated)||0,expiry:b.expiry||''});});
   if(editId){const old=S.clients.find(c=>c.id===editId);Object.keys(csMap).forEach(ctId=>{const oldCs=(old?.consignments||[]).find(x=>x.creditTypeId===ctId);if(oldCs)csMap[ctId].used=oldCs.used||0;});}
@@ -1064,11 +1065,34 @@ document.getElementById('btn-save-client').addEventListener('click',async()=>{
     consignments.forEach(cs=>{const ct=S.creditTypes.find(t=>t.id===cs.creditTypeId);const oldCs=(old?.consignments||[]).find(o=>o.creditTypeId===cs.creditTypeId);const newT=(cs.batches||[]).reduce((s,b)=>s+(b.allocated||0),0);const oldT=(oldCs?.batches||[]).reduce((s,b)=>s+(b.allocated||0),0);if(newT!==oldT)audit.push({id:uid(),type:'allocation',date:now(),clientId:editId,clientName:name,creditTypeName:ct?.name||'',description:'Allocation updated for '+name+' — '+(ct?.name||''),before:oldT,after:newT});});
     S.clients=S.clients.map(c=>c.id===editId?{...c,name,hostIPs:ips,consignments,contacts}:c);
   } else {
-    const newId=uid();consignments.forEach(cs=>{const ct=S.creditTypes.find(t=>t.id===cs.creditTypeId);const total=(cs.batches||[]).reduce((s,b)=>s+(b.allocated||0),0);audit.push({id:uid(),type:'allocation',date:now(),clientId:newId,clientName:name,creditTypeName:ct?.name||'',description:'New client: '+name+' — '+(ct?.name||''),before:null,after:total});});
+    const newId=uid();
+    // If this client came from an unrecognised IP, apply that usage to matching consignments
+    if(pendingIp&&S.unmatchedIPUsage[pendingIp]){
+      const ipUsage=S.unmatchedIPUsage[pendingIp];
+      const ctByName={};S.creditTypes.forEach(ct=>{ctByName[ct.name]=ct;});
+      consignments.forEach(cs=>{
+        const ct=S.creditTypes.find(t=>t.id===cs.creditTypeId);
+        if(ct&&ipUsage[ct.name]){cs.used=(cs.used||0)+ipUsage[ct.name];}
+      });
+      // Also check for any unmatched usage against credit types not in consignments and log it
+      const unaccounted={};
+      Object.entries(ipUsage).forEach(([ctName,n])=>{
+        const matched=consignments.some(cs=>S.creditTypes.find(t=>t.id===cs.creditTypeId)?.name===ctName);
+        if(!matched)unaccounted[ctName]=n;
+      });
+      if(Object.keys(unaccounted).length){
+        audit.push({id:uid(),type:'allocation',date:now(),clientId:newId,clientName:name,description:`Note: ${Object.entries(unaccounted).map(([ct,n])=>`${ct}: ${n.toLocaleString()} credits unaccounted (no matching batch)`).join(', ')}`,before:null,after:null});
+      }
+      delete S.unmatchedIPUsage[pendingIp];
+    }
+    consignments.forEach(cs=>{const ct=S.creditTypes.find(t=>t.id===cs.creditTypeId);const total=(cs.batches||[]).reduce((s,b)=>s+(b.allocated||0),0);audit.push({id:uid(),type:'allocation',date:now(),clientId:newId,clientName:name,creditTypeName:ct?.name||'',description:'New client: '+name+' — '+(ct?.name||''),before:null,after:total});});
     S.clients.push({id:newId,name,hostIPs:ips,consignments,contacts});
   }
+  document.getElementById('cf-id').dataset.pendingIp='';
   S.auditLogs=[...audit,...S.auditLogs].slice(0,500);
-  await saveShared();document.getElementById('client-form-wrap').classList.add('hid');toast(editId?'Client updated':'Client added','ok',3200,'Changes saved');renderAll();
+  await saveShared();document.getElementById('client-form-wrap').classList.add('hid');
+  toast(editId?'Client updated':'Client added','ok',3200,'Changes saved');
+  renderAll();renderUnrecognisedIPs();
   if(audit.length&&S.settings.triggers?.new_allocation?.enabled)setTimeout(()=>runNotificationCheck(false),500);
 });
 function openClientForm(c){
@@ -1286,17 +1310,6 @@ document.getElementById('unrecognised-section').addEventListener('click',async f
 });
 
 // After saving a client, if it came from an unrecognised IP, clear it
-const origSaveClient=document.getElementById('btn-save-client');
-origSaveClient.addEventListener('click',async function afterSaveForIP(){
-  const pendingIp=document.getElementById('cf-id').dataset.pendingIp;
-  if(pendingIp&&S.unmatchedIPUsage[pendingIp]){
-    delete S.unmatchedIPUsage[pendingIp];
-    document.getElementById('cf-id').dataset.pendingIp='';
-    await saveShared();
-    renderUnrecognisedIPs();
-  }
-},{capture:false});
-
 function showMsg(type,html){const el=document.getElementById('upload-msg');el.className='alrt '+type;el.innerHTML=html;}
 
 document.querySelectorAll('.sb').forEach(b=>{b.addEventListener('click',()=>{document.querySelectorAll('.sb').forEach(x=>x.classList.remove('on'));b.classList.add('on');const isU=b.dataset.log==='usage';document.getElementById('log-usage').classList.toggle('hid',!isU);document.getElementById('log-audit').classList.toggle('hid',isU);});});
