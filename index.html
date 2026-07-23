@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Akt:wght@400;500;600&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -142,6 +143,7 @@ input[type=file]::file-selector-button{padding:4px 9px;border-radius:var(--r);bo
     <button class="tb" data-tab="logs">Logs</button>
   </nav>
   <div class="hdr-actions">
+    <button class="bo sm" id="btn-report"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg> Report</button>
     <button class="bo sm" id="btn-backup"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Backup</button>
     <div class="sdot" id="sdot"></div>
   </div>
@@ -161,9 +163,33 @@ input[type=file]::file-selector-button{padding:4px 9px;border-radius:var(--r);bo
     <textarea id="import-text" rows="5" placeholder="Paste your backup JSON here..." style="margin-bottom:8px;font-size:10px"></textarea>
     <div id="import-msg"></div>
     <div class="fa" style="margin-top:8px"><button class="bp" id="btn-do-import">Restore from backup</button><button class="bo" id="btn-close-modal2">Close</button></div>
+    <div style="border-top:.5px solid var(--bdr);margin:16px 0"></div>
+    <p style="color:var(--red-t);font-size:12px">Danger zone</p>
+    <p style="font-size:12px;color:var(--txt2);margin-bottom:10px">Wipe all data and start fresh. The 18 preset clients will not be re-seeded — you get a completely blank application.</p>
+    <button class="bp" id="btn-clear-all" style="background:var(--red-t)">Clear all data</button>
   </div>
 </div>
 <div class="toast-wrap" id="toast-wrap"></div>
+<!-- Report Modal -->
+<div class="modal-bg hid" id="report-modal">
+  <div class="modal" style="max-width:560px">
+    <div class="fb mb8"><h3>Download usage report</h3><button class="bi" id="btn-close-report" style="border:none;font-size:16px;padding:2px 6px">✕</button></div>
+    <p class="f12 m" style="margin-bottom:16px">Generates an Excel file with a dedicated sheet per credit type, showing credit usage breakdown by client.</p>
+    <div class="g2 mb14">
+      <div><label class="fl">From date</label><input type="date" id="rep-from"/></div>
+      <div><label class="fl">To date</label><input type="date" id="rep-to"/></div>
+    </div>
+    <div class="mb14">
+      <label class="fl">Client (optional — leave blank for all)</label>
+      <select id="rep-client"><option value="">All clients</option></select>
+    </div>
+    <div id="rep-preview" style="margin-bottom:14px"></div>
+    <div class="fa" style="margin-top:0">
+      <button class="bp" id="btn-download-report"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download .xlsx</button>
+      <button class="bo" id="btn-close-report2">Cancel</button>
+    </div>
+  </div>
+</div>
 <div class="modal-bg hid" id="confirm-modal">
   <div class="modal modal-sm">
     <h3 id="confirm-title">Delete item?</h3>
@@ -382,7 +408,153 @@ function mergeState(inc){
 let S={creditTypes:[],clients:[],usageLogs:[],auditLogs:[],notifLogs:[],unmatchedIPUsage:{},settings:{sgApiKey:'',sgFromEmail:'',sgFromName:'AccuReach Credits',adminEmails:[],triggers:{...DEFAULT_TRIGGERS},dailyThreshold:1000,sentNotifKeys:{}}};
 let editingPool={},lastKnownJSON='',pendingRemoteData=null,adminEmailRows=[],expandedClients=new Set();
 
-// ── Toast notifications ──
+// ── Clear all data ──
+document.getElementById('btn-clear-all').addEventListener('click',async()=>{
+  const ok=await confirmDelete('Clear all data?','This will permanently wipe all clients, credit types, usage logs, allocations and settings. This cannot be undone.');
+  if(!ok)return;
+  S={creditTypes:[],clients:[],usageLogs:[],auditLogs:[],notifLogs:[],unmatchedIPUsage:{},settings:{sgApiKey:'',sgFromEmail:'',sgFromName:'AccuReach Credits',adminEmails:[],triggers:{...DEFAULT_TRIGGERS},dailyThreshold:1000,sentNotifKeys:{}}};
+  await saveShared();closeModal();renderAll();
+  toast('All data cleared','ok',3200,'Application reset to blank state');
+});
+
+// ── Report modal ──
+function openReportModal(){
+  // Set default date range — last 90 days
+  const to=new Date(),from=new Date();from.setDate(from.getDate()-90);
+  document.getElementById('rep-from').value=from.toISOString().slice(0,10);
+  document.getElementById('rep-to').value=to.toISOString().slice(0,10);
+  // Populate client dropdown
+  document.getElementById('rep-client').innerHTML='<option value="">All clients</option>'+S.clients.map(c=>'<option value="'+esc(c.id)+'">'+esc(c.name)+'</option>').join('');
+  updateRepPreview();
+  document.getElementById('report-modal').classList.remove('hid');
+}
+function closeReportModal(){document.getElementById('report-modal').classList.add('hid');}
+document.getElementById('btn-report').addEventListener('click',openReportModal);
+document.getElementById('btn-close-report').addEventListener('click',closeReportModal);
+document.getElementById('btn-close-report2').addEventListener('click',closeReportModal);
+document.getElementById('report-modal').addEventListener('click',e=>{if(e.target===document.getElementById('report-modal'))closeReportModal();});
+['rep-from','rep-to','rep-client'].forEach(id=>document.getElementById(id)?.addEventListener('change',updateRepPreview));
+
+function getReportData(){
+  const fromVal=document.getElementById('rep-from').value;
+  const toVal=document.getElementById('rep-to').value;
+  const clientId=document.getElementById('rep-client').value;
+  const from=fromVal?new Date(fromVal+'T00:00:00'):null;
+  const to=toVal?new Date(toVal+'T23:59:59'):null;
+  // Build: {ctName: {clientName: {date: count}}}
+  const data={};
+  (S.usageLogs||[]).forEach(log=>{
+    const source=log.dateBreakdown||{[log.date.slice(0,10)]:log.credits||{}};
+    Object.entries(source).forEach(([dateStr,clientCredits])=>{
+      const logDate=new Date(dateStr);
+      if(from&&logDate<from)return;
+      if(to&&logDate>to)return;
+      Object.entries(clientCredits).forEach(([clientName,types])=>{
+        // Filter by client if selected
+        if(clientId){const c=S.clients.find(x=>x.id===clientId);if(!c||c.name!==clientName)return;}
+        Object.entries(types).forEach(([ctName,count])=>{
+          if(!data[ctName])data[ctName]={};
+          if(!data[ctName][clientName])data[ctName][clientName]={};
+          data[ctName][clientName][dateStr]=(data[ctName][clientName][dateStr]||0)+count;
+        });
+      });
+    });
+  });
+  return data;
+}
+
+function updateRepPreview(){
+  const data=getReportData();
+  const el=document.getElementById('rep-preview');
+  const sheets=Object.keys(data);
+  if(!sheets.length){el.innerHTML='<div class="alrt info">No usage data found for the selected filters.</div>';return;}
+  const totalRows=sheets.reduce((s,ct)=>s+Object.keys(data[ct]).length,0);
+  el.innerHTML=`<div class="card" style="display:flex;gap:20px;flex-wrap:wrap;padding:.7rem 1rem">
+    <div><div class="f11 m">Sheets</div><div class="f13 f5">${sheets.length}</div></div>
+    <div><div class="f11 m">Credit types</div><div class="f13 f5">${sheets.map(s=>'<span class="badge bb" style="font-size:10px">'+esc(s)+'</span>').join(' ')}</div></div>
+    <div><div class="f11 m">Clients with data</div><div class="f13 f5">${[...new Set(sheets.flatMap(ct=>Object.keys(data[ct])))].length}</div></div>
+  </div>`;
+}
+
+document.getElementById('btn-download-report').addEventListener('click',()=>{
+  const data=getReportData();
+  const sheets=Object.keys(data);
+  if(!sheets.length){toast('No data to export','er',3000,'Adjust the date range or client filter');return;}
+
+  const wb=XLSX.utils.book_new();
+  const fromVal=document.getElementById('rep-from').value;
+  const toVal=document.getElementById('rep-to').value;
+  const clientFilter=document.getElementById('rep-client');
+  const clientLabel=clientFilter.value?clientFilter.options[clientFilter.selectedIndex].text:'All clients';
+
+  // ── Summary sheet ──
+  const summaryRows=[
+    ['AccuReach Credits — Usage Report'],
+    [`Generated: ${new Date().toLocaleString('en-GB')}`],
+    [`Period: ${fromVal||'all time'} to ${toVal||'all time'}`],
+    [`Client filter: ${clientLabel}`],
+    [],
+    ['Credit type','Total credits used','Clients with usage']
+  ];
+  sheets.forEach(ct=>{
+    const clients=Object.keys(data[ct]);
+    const total=clients.reduce((s,cn)=>s+Object.values(data[ct][cn]).reduce((ss,n)=>ss+n,0),0);
+    summaryRows.push([ct,total,clients.length]);
+  });
+  const summaryWs=XLSX.utils.aoa_to_sheet(summaryRows);
+  // Column widths
+  summaryWs['!cols']=[{wch:40},{wch:20},{wch:20}];
+  // Bold title
+  if(summaryWs['A1'])summaryWs['A1'].s={font:{bold:true,sz:14}};
+  XLSX.utils.book_append_sheet(wb,summaryWs,'Summary');
+
+  // ── One sheet per credit type ──
+  sheets.forEach(ctName=>{
+    const ctData=data[ctName];
+    const clients=Object.keys(ctData).sort();
+    // Collect all dates across all clients for this CT, sorted
+    const allDates=[...new Set(clients.flatMap(cn=>Object.keys(ctData[cn])))].sort();
+
+    // Header row
+    const headerRow=['Client',...allDates,'Total'];
+    const wsRows=[headerRow];
+
+    clients.forEach(clientName=>{
+      const row=[clientName];
+      let clientTotal=0;
+      allDates.forEach(d=>{
+        const n=ctData[clientName][d]||0;
+        row.push(n);clientTotal+=n;
+      });
+      row.push(clientTotal);
+      wsRows.push(row);
+    });
+
+    // Totals row
+    const totalsRow=['TOTAL'];
+    let grandTotal=0;
+    allDates.forEach((_,di)=>{
+      const colTotal=clients.reduce((s,cn)=>s+(ctData[cn][allDates[di]]||0),0);
+      totalsRow.push(colTotal);grandTotal+=colTotal;
+    });
+    totalsRow.push(grandTotal);
+    wsRows.push(totalsRow);
+
+    const ws=XLSX.utils.aoa_to_sheet(wsRows);
+    // Column widths: client name wide, dates narrow, total medium
+    ws['!cols']=[{wch:30},...allDates.map(()=>({wch:12})),{wch:12}];
+
+    // Safe sheet name (Excel limit 31 chars, no special chars)
+    const sheetName=ctName.replace(/[\\\/\?\*\[\]:]/g,'').slice(0,31)||'Sheet';
+    XLSX.utils.book_append_sheet(wb,ws,sheetName);
+  });
+
+  // Download
+  const filename=`accureach-usage-${fromVal||'all'}-to-${toVal||'all'}.xlsx`;
+  XLSX.writeFile(wb,filename);
+  toast('Report downloaded','ok',3200,filename);
+  closeReportModal();
+});
 function toast(msg,type='ok',duration=3200,sub=''){
   const wrap=document.getElementById('toast-wrap');
   const t=document.createElement('div');
