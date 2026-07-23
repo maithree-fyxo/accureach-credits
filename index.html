@@ -265,7 +265,12 @@ input[type=file]::file-selector-button{padding:4px 9px;border-radius:var(--r);bo
         <div><label class="fl">Column containing host IP</label><select id="col-ip"></select></div>
         <div><label class="fl">Column containing status code</label><select id="col-status"></select></div>
       </div>
+      <div class="g2 mb14">
+        <div><label class="fl">Column containing request path / credit type</label><select id="col-path"></select></div>
+        <div><label class="fl">Column containing timestamp (optional)</label><select id="col-ts"></select></div>
+      </div>
       <div id="csv-preview" class="prevscr"></div>
+      <div id="match-preview"></div>
       <button class="bp" id="btn-process">Process rows</button>
     </div>
   </div>
@@ -1159,26 +1164,52 @@ document.getElementById('csv-file').addEventListener('change',function(){
       return;
     }
     parsedCSV={headers,rows,checksum};
-    const ipG=headers.find(h=>/ip|host/i.test(h))||'',stG=headers.find(h=>/status.*code|response.*code/i.test(h))||headers.find(h=>/status/i.test(h))||'';
-    const mkO=g=>headers.map(h=>'<option value="'+esc(h)+'"'+(h===g?' selected':'')+'>'+esc(h)+'</option>').join('');
-    document.getElementById('col-ip').innerHTML='<option value="">— select —</option>'+mkO(ipG);
-    document.getElementById('col-status').innerHTML='<option value="">— select —</option>'+mkO(stG);
+    const ipG=headers.find(h=>/^host[\._]?ip$|^ip[\._]?address$|^host$/i.test(h))||headers.find(h=>/ip|host/i.test(h))||'';
+    const stG=headers.find(h=>/^http[\._]?response[\._]?code$|^status[\._]?code$|^response[\._]?code$/i.test(h))||headers.find(h=>/status.*code|response.*code/i.test(h))||headers.find(h=>/^status$/i.test(h))||'';
+    const pathG=headers.find(h=>/^request[\._]?path$|^path$/i.test(h))||headers.find(h=>/request.*path|api.*path/i.test(h))||'';
+    const tsG=headers.find(h=>/^@?timestamp$|^date[\._]?time$|^time$/i.test(h))||headers.find(h=>/timestamp|datetime/i.test(h))||'';
+    const mkO=g=>['<option value="">— select —</option>',...headers.map(h=>'<option value="'+esc(h)+'"'+(h===g?' selected':'')+'>'+esc(h)+'</option>')].join('');
+    document.getElementById('col-ip').innerHTML=mkO(ipG);
+    document.getElementById('col-status').innerHTML=mkO(stG);
+    document.getElementById('col-path').innerHTML=mkO(pathG);
+    document.getElementById('col-ts').innerHTML='<option value="">— none / use today —</option>'+headers.map(h=>'<option value="'+esc(h)+'"'+(h===tsG?' selected':'')+'>'+esc(h)+'</option>').join('');
     const prevRows=rows.slice(0,5).map(r=>'<tr>'+headers.slice(0,8).map(h=>'<td style="padding:4px 8px;border-bottom:.5px solid var(--bdr);color:var(--txt2);font-size:11px;font-family:monospace;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r[h]||'')+'</td>').join('')+'</tr>').join('');
     document.getElementById('csv-preview').innerHTML='<p class="f12 m mb8">Preview (first 5 rows)</p><table style="min-width:100%;border-collapse:collapse"><thead><tr>'+headers.slice(0,8).map(h=>'<th style="padding:5px 8px;text-align:left;background:var(--surf2);border-bottom:.5px solid var(--bdr);white-space:nowrap;font-size:11px">'+esc(h)+'</th>').join('')+'</tr></thead><tbody>'+prevRows+'</tbody></table>';
-    document.getElementById('btn-process').textContent='Process '+rows.length.toLocaleString()+' rows';document.getElementById('csv-config').classList.remove('hid');
+    document.getElementById('btn-process').textContent='Process '+rows.length.toLocaleString()+' rows';
+    document.getElementById('csv-config').classList.remove('hid');
+    // Auto-update match preview when column selections change
+    function updateMatchPreview(){
+      const ic=document.getElementById('col-ip').value,sc=document.getElementById('col-status').value,pc=document.getElementById('col-path').value;
+      if(!ic||!sc||!pc){document.getElementById('match-preview').innerHTML='';return;}
+      const ipMap2={};S.clients.forEach(c=>(c.hostIPs||[]).forEach(ip=>{ipMap2[ip.trim()]=c.name;}));
+      const ctByPath2={};S.creditTypes.forEach(ct=>{ctByPath2[ct.name.trim().toLowerCase()]=ct.name;});
+      let matched=0,unmatched=0,noPath=0;
+      const sample=rows.slice(0,500);
+      sample.forEach(row=>{const ip=(row[ic]||'').trim(),st=(row[sc]||'').trim(),path=(row[pc]||'').trim();if(ipMap2[ip]&&ctByPath2[path.toLowerCase()])matched++;else if(!ip||ip.startsWith('pdl_')){}else{if(!ctByPath2[path.toLowerCase()])noPath++;else unmatched++;}});
+      const total=sample.length;
+      document.getElementById('match-preview').innerHTML=`<div class="card" style="margin-top:12px;margin-bottom:14px;display:flex;gap:20px;flex-wrap:wrap;padding:.7rem 1rem">
+        <div><div class="f11 m">Matched (sample of ${total})</div><div class="f13 f5" style="color:var(--grn-t)">${matched.toLocaleString()} rows</div></div>
+        <div><div class="f11 m">Unrecognised IP</div><div class="f13 f5" style="color:var(--amb-t)">${unmatched.toLocaleString()} rows</div></div>
+        <div><div class="f11 m">Unknown credit type</div><div class="f13 f5" style="color:var(--txt3)">${noPath.toLocaleString()} rows</div></div>
+      </div>`;
+    }
+    ['col-ip','col-status','col-path','col-ts'].forEach(id=>document.getElementById(id).addEventListener('change',updateMatchPreview));
+    updateMatchPreview();
   };reader.readAsText(file);
 });
 document.getElementById('btn-process').addEventListener('click',async()=>{
   const ipCol=document.getElementById('col-ip').value,stCol=document.getElementById('col-status').value;
-  if(!ipCol||!stCol){showMsg('er','Please select both columns.');return;}
+  const pathCol=document.getElementById('col-path').value,tsCol=document.getElementById('col-ts').value;
+  if(!ipCol||!stCol||!pathCol){showMsg('er','Please select the IP, status code, and request path columns.');return;}
   const ipMap={};S.clients.forEach(c=>(c.hostIPs||[]).forEach(ip=>{ipMap[ip.trim()]=c.id;}));
   const ctByPath={};S.creditTypes.forEach(ct=>{ctByPath[ct.name.trim().toLowerCase()]=ct;});
   const delta={},logC={},dateCredits={},unmatchedUsage={};
   parsedCSV.rows.forEach(row=>{
-    const ip=(row[ipCol]||'').trim(),status=(row[stCol]||'').trim(),requestPath=(row['request_path']||row['request-path']||row['path']||'').trim();
-    const tsRaw=row['@timestamp']||row['timestamp']||row['date']||'';
+    const ip=(row[ipCol]||'').trim(),status=(row[stCol]||'').trim();
+    const requestPath=(row[pathCol]||row['request_path']||row['request-path']||row['path']||'').trim();
+    const tsRaw=tsCol?(row[tsCol]||''):(row['@timestamp']||row['timestamp']||row['date']||'');
     let dateStr=new Date().toISOString().slice(0,10);
-    if(tsRaw){const tsClean=tsRaw.replace(/(\.[0-9]{3})[0-9]+/,'$1');const d=new Date(tsClean);if(!isNaN(d))dateStr=d.toISOString().slice(0,10);}
+    if(tsRaw){const tsClean=tsRaw.trim().replace(/(\.\d{3})\d+/,'$1');const d=new Date(tsClean);if(!isNaN(d))dateStr=d.toISOString().slice(0,10);}
     const cid=ipMap[ip];
     if(!cid){
       if(ip&&!ip.startsWith('pdl_')&&!ip.startsWith('profile=')){
